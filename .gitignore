@@ -1,0 +1,19 @@
+# Local operating system and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build and test output
+/bin/
+/dist/
+/coverage/
+/coverage.out
+/coverage.html
+*.test
+
+# Local environment overrides
+.env
+.env.*
+!.env.example

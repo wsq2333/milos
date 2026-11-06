@@ -1,0 +1,60 @@
+# Milos design input example: no runnable Milos importer is available yet.
+# Applying this file with kubectl does not submit it to Milos.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: milos-diamond
+spec:
+  entrypoint: main
+  parallelism: 2
+  arguments:
+    parameters:
+      - name: greeting
+        value: "Hello from Milos"
+  templates:
+    - name: main
+      dag:
+        failFast: false
+        tasks:
+          - name: prepare
+            template: echo
+            arguments:
+              parameters:
+                - name: message
+                  value: "{{workflow.parameters.greeting}}"
+          - name: left
+            dependencies: [prepare]
+            template: echo
+            arguments:
+              parameters:
+                - name: message
+                  value: "left branch"
+          - name: right
+            dependencies: [prepare]
+            template: echo
+            arguments:
+              parameters:
+                - name: message
+                  value: "right branch"
+          - name: finish
+            dependencies: [left, right]
+            template: echo
+            arguments:
+              parameters:
+                - name: message
+                  value: "both branches succeeded"
+    - name: echo
+      inputs:
+        parameters:
+          - name: message
+      container:
+        image: busybox:1.37.0
+        command: [echo]
+        args: ["{{inputs.parameters.message}}"]
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "32Mi"
