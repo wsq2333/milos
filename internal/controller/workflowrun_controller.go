@@ -81,7 +81,7 @@ func (r *WorkflowRunReconciler) Reconcile(ctx context.Context, key ctrl.Request)
 		for _, n := range nodes {
 			run.Status.Nodes[n.Name] = milosv1.NodeStatus{Phase: string(workflow.Waiting)}
 		}
-		meta.SetStatusCondition(&run.Status.Conditions, metav1.Condition{Type: "Accepted", Status: metav1.ConditionTrue, Reason: "ValidDefinition", Message: "The native Pod execution contract is valid", ObservedGeneration: run.Generation})
+		meta.SetStatusCondition(&run.Status.Conditions, metav1.Condition{Type: "Accepted", Status: metav1.ConditionTrue, Reason: "ValidDefinition", Message: "The Pod execution contract is valid", ObservedGeneration: run.Generation})
 		return r.save(ctx, before, run)
 	}
 	// Commit observations before planning successors, including recovery after Create.
@@ -94,8 +94,9 @@ func (r *WorkflowRunReconciler) Reconcile(ctx context.Context, key ctrl.Request)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		applyHandle(&s, observation.Handle)
+		s.Admission, s.Placement, s.ObservationSource, s.FailureClass = observation.Admission, observation.Placement, observation.Source, observation.FailureClass
 		if observation.Available {
-			s.PodName, s.PodUID = observation.Handle.PodName, string(observation.Handle.PodUID)
 			if observation.Phase != "Unknown" {
 				s.Phase = observation.Phase
 			}
@@ -139,7 +140,10 @@ func (r *WorkflowRunReconciler) Reconcile(ctx context.Context, key ctrl.Request)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		s.PodName, s.PodUID, s.Phase, s.Reason = update.Handle.PodName, string(update.Handle.PodUID), string(workflow.Submitted), ""
+		applyHandle(&s, update.Handle)
+		if update.Complete {
+			s.Phase, s.Reason = string(workflow.Submitted), ""
+		}
 		run.Status.Nodes[node.Name] = s
 		return r.save(ctx, before, run)
 	}
@@ -183,7 +187,7 @@ func (r *WorkflowRunReconciler) stop(ctx context.Context, run *milosv1.WorkflowR
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			s.PodName, s.PodUID = update.Handle.PodName, string(update.Handle.PodUID)
+			applyHandle(&s, update.Handle)
 			s.CleanupComplete = update.Complete
 		} else {
 			s.CleanupComplete = true

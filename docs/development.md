@@ -1,6 +1,6 @@
 # Development and local execution
 
-Milos currently provides an experimental, single-cluster Go controller for native `WorkflowRun` resources. The API group `milos.example.io` is provisional. Design documents describe the broader target; the code and generated CRD define the current input contract.
+Milos currently provides an experimental Go controller for native `WorkflowRun` resources. The API group `milos.example.io` is provisional. Design documents describe the broader target; the code and generated CRD define the current input contract.
 
 ## Prerequisites and dependencies
 
@@ -26,11 +26,13 @@ make generate manifests
 | `internal/execution` | Ensure, Observe, Stop and Collect lifecycle contract |
 | `internal/pod` | Stable identity, owner references, execution digest and UID verification |
 | `internal/backends/nativepod` | Idempotent local Pod creation, observation and deletion |
+| `internal/backends/scheduledpod` | Optional Kueue, MultiKueue and Volcano lifecycle adapters |
+| `internal/backends` | Configuration-based backend routing |
 | `cmd/controller` | Scheme, manager, namespace scope, leader election, health checks and metrics |
 
-Each node runs one application container named `main`, with `restartPolicy: Never` and `schedulerName: default-scheduler`. A workflow supports 1–128 nodes and parallelism of 1–128. Requests and limits, including device-plugin extended resources such as `nvidia.com/gpu`, are passed through; Milos does not discover devices or choose GPU models. Only `emptyDir` and PVC volumes are currently accepted. Service account token automount is disabled on execution Pods.
+Each node runs one application container named `main`, with `restartPolicy: Never` and the configured scheduler (defaulting to `default-scheduler`). A workflow supports 1–128 nodes and parallelism of 1–128. Requests and limits, including device-plugin extended resources such as `nvidia.com/gpu`, are passed through; Milos does not discover devices or choose GPU models. Only `emptyDir` and PVC volumes are currently accepted. Service account token automount is disabled on execution Pods.
 
-Execution inputs are immutable. Admission is `None`, placement is `Local`, and backend/contract are `native-pod`/`v1`. Unsupported combinations and nonzero `maxRetries` are rejected. A positive workflow timeout is measured from WorkflowRun creation, including waiting time; zero disables it. Changes to resource selection or queue policy will require explicit future API design rather than encoding backend details in the DAG planner.
+Execution inputs are immutable. The default admission is `None`, placement is `Local`, and backend/contract are `native-pod`/`v1`. Optional Kueue, MultiKueue and Volcano modes are described in [scheduling integrations](scheduling-integrations.md). Unsupported combinations and nonzero `maxRetries` are rejected. A positive workflow timeout is measured from WorkflowRun creation, including waiting time; zero disables it. Queue references and worker membership are explicit immutable configuration; backend details stay outside the DAG planner.
 
 CRD validation checks the schema, allowed enum values and immutability. The controller additionally checks DAG structure, supported volume sources, resource bounds and the 256 KiB execution definition limit. A rejected definition receives an `Accepted=False` condition without starting Pods. This prototype has no admission webhook; Kubernetes performs final validation of generated Pod fields at creation, and admission failures are currently reported through controller logs and reconcile errors. When applying native resources, use strict field validation to reject unknown fields instead of relying on default API pruning.
 
@@ -70,7 +72,7 @@ kubectl delete workflowrun diamond -n default
 
 The sample uses finite BusyBox commands to demonstrate dependencies; it is not an ML benchmark. `examples/diamond.yaml` is a separate Argo input example for the future importer and cannot be submitted to this controller.
 
-The local process uses kubeconfig credentials. `config/rbac/` contains a generated ClusterRole, ServiceAccount and namespace-scoped RoleBinding for a future in-cluster deployment. The binding and ServiceAccount default to `default`; adjust both when deploying elsewhere. Applying them does not change the credentials of a locally running process. No Deployment, image release, or Helm chart is supplied yet.
+The local process uses kubeconfig credentials. `config/rbac/` contains a generated ClusterRole, ServiceAccount and namespace-scoped RoleBinding for a future in-cluster deployment. The binding and ServiceAccount default to `default`; adjust both when deploying elsewhere. Applying them does not change the credentials of a locally running process. A Deployment, Dockerfile and optional Kustomize overlays are available under [deploy/](../deploy/README.md). They have not been deployed; image publication and Helm packaging remain pending.
 
 The controller enables leader election by default using a lease in the selected namespace. Leave it enabled when running multiple replicas. Metrics and health endpoints bind to `127.0.0.1:8080` and `127.0.0.1:8081`; configure the flags explicitly when packaging the controller in a container.
 
@@ -88,4 +90,8 @@ Envtest has no scheduler, kubelet, garbage collector, or workload containers. Te
 
 ## Deferred features
 
-Argo parsing and parameter binding, `milosctl`, application retries, automatic Pod result collection, deployment packaging, Kueue/MultiKueue/Volcano integration, resource profiling and ML allocation policies are not implemented. Do not add placeholder success implementations for these capabilities. Keep backend lifecycle logic separate from workflow decisions as they are introduced.
+Argo parsing and parameter binding, `milosctl`, application retries, automatic Pod result collection, Helm packaging, real scheduler acceptance of the optional integrations, resource profiling and ML allocation policies are not implemented. Do not add placeholder success implementations for these capabilities. Keep backend lifecycle logic separate from workflow decisions as they are introduced.
+
+## Remote development preference
+
+Prefer the user-designated SSH developer environment for testing. Use an isolated temporary checkout and explicit kubeconfig/context. Existing shared cluster resources must remain unchanged. The optional live test and its required cluster-scoped setup are documented in [scheduling integrations](scheduling-integrations.md); envtest requires no shared cluster changes. Keep environment addresses and credentials outside the public repository.

@@ -6,15 +6,15 @@
 
 Milos 的长期目标是提升机器学习训练与推理工作流在异构 Kubernetes 集群中的调度效率和资源分配效率，让不同阶段的计算需求与 CPU、GPU 及其他资源能力更好地匹配。
 
-项目从可靠的 Pod 工作流执行内核起步：当前内核接收原生 `WorkflowRun` 资源，以 level-triggered reconciliation 推进 DAG；Argo Workflow YAML 简单子集导入器仍在规划中。首版支持单集群原生 Pod 与 `default-scheduler`，后续通过执行后端扩展 Kueue、MultiKueue 和 Volcano，并逐步探索面向机器学习负载的资源与调度策略。
+项目从可靠的 Pod 工作流执行内核起步：当前内核接收原生 `WorkflowRun` 资源，以 level-triggered reconciliation 推进 DAG；Argo Workflow YAML 简单子集导入器仍在规划中。默认路径使用单集群原生 Pod 与 `default-scheduler`；现已加入实验性的 Kueue、MultiKueue 和 Volcano 可选适配器，并将逐步探索面向机器学习负载的资源与调度策略。
 
 名字取自地中海的米洛斯岛。
 
-> 当前处于原型阶段：已实现 Go controller、WorkflowRun CRD、DAG planner、原生 Pod 后端及测试。Argo 导入、业务重试、Helm 打包、机器学习资源选择策略与第三方调度集成仍在规划中。尚非生产版本，仍需真实负载与集群 E2E 验证。
+> 当前处于原型阶段：已实现 Go controller、WorkflowRun CRD、DAG planner、原生 Pod 后端及测试。已实现可选的 Kueue、MultiKueue 和 Volcano 适配器；Argo 导入、业务重试、Helm 打包与机器学习资源选择策略仍在规划中。尚非生产版本，仍需真实负载与集群 E2E 验证。
 
 ## English description
 
-Milos is a Kubernetes-native workflow engine being developed to improve scheduling and resource allocation for machine learning training and inference across heterogeneous CPU and GPU clusters. Its initial design uses level-triggered reconciliation to execute a focused subset of Argo Workflow YAML with native Pods and the default scheduler, with an extensible execution layer for future integration with Kueue, MultiKueue, and Volcano.
+Milos is a Kubernetes-native workflow engine being developed to improve scheduling and resource allocation for machine learning training and inference across heterogeneous CPU and GPU clusters. It uses level-triggered reconciliation to execute Pod DAGs, with optional Kueue admission, MultiKueue placement and Volcano scheduling integrations. A focused Argo Workflow YAML importer and ML resource optimization policies are planned.
 
 ## 仓库
 
@@ -85,20 +85,22 @@ flowchart LR
 | --- | --- |
 | Milos | DAG、执行身份、业务重试、节点结果、取消与清理协调 |
 | Kubernetes | API 持久化、Pod 生命周期与容器运行事实 |
-| Kueue（后续） | 队列、配额、资源准入与配额层抢占 |
-| MultiKueue（后续） | worker 选择、远端任务管理与状态同步 |
-| Volcano（后续） | 执行集群内的节点调度；设备能力取决于插件和部署配置 |
+| Kueue（可选） | 队列、配额、资源准入与配额层抢占 |
+| MultiKueue（可选） | worker 选择、远端任务管理与状态同步 |
+| Volcano（可选） | 执行集群内的节点调度；设备能力取决于插件和部署配置 |
 
-首版由 NativePodBackend 直接创建、观察和清理本集群 Pod。DAG planner 消费统一执行结果，不感知队列或 scheduler 类型。ExecutionBackend 覆盖 Ensure、Observe、Stop、Collect，具体设计见 [执行抽象](docs/execution-abstraction.md)。
+默认路径使用 NativePodBackend；路由层在启用可选集成时选择 scheduled Pod 适配器。DAG planner 消费统一执行结果，不感知队列或 scheduler 类型。ExecutionBackend 覆盖 Ensure、Observe、Stop、Collect，具体设计见 [执行抽象](docs/execution-abstraction.md)。
 
-未来跨集群模式下 WorkflowRun 留在 manager。Milos 创建 manager Pod，由 MultiKueue 管理远端 Pod；Milos 不再并行实现一个远端提交器。单集群模式直接观察实际执行 Pod。
+实验性的跨集群模式下 WorkflowRun 留在 manager。Milos 创建 manager Pod，由 MultiKueue 管理远端 Pod；Milos 不再并行实现一个远端提交器。单集群模式直接观察实际执行 Pod。
 
-MultiKueue 官方文档说明 plain Pod 支持 manager 调度门和远端状态同步；这为设计提供依据，但不代表 Milos 的取消、恢复和清理链路已经通过验证。[上游说明](https://kueue.sigs.k8s.io/v0.20/docs/tasks/run/multikueue/plain_pods/)
+Milos 直接读取 worker Pod 后才接受远端结果，取消时等待 worker 资源消失；仅凭 manager 镜像状态不足以确认完成，worker 失联会阻止确认。这些检查不提供分布式 fencing 或 exactly-once 副作用保证。配置、权限和验证边界见 [调度集成指南](docs/scheduling-integrations.md)。
+
+支持组合为 native/default、native/Volcano、本地 Kueue/default、本地 Kueue/Volcano、MultiKueue/default；拒绝 MultiKueue/Volcano 和多 Pod gang。可选集成默认关闭，要求 Kueue v1beta2 和 Volcano v1beta1 API。
 
 ## 状态推进
 
 ```text
-读取 WorkflowRun，经执行后端观察资源（首版仅 Pod）
+读取 WorkflowRun，经执行后端观察资源（Pod 及可选调度资源）
 → 校验归属、当前 attempt 与资源 UID
 → 归一化当前观察结果
 → 持久化节点结果及下一次执行意图
@@ -134,9 +136,10 @@ milos/
 │   ├── workflow/            # Pure DAG validation and planner
 │   ├── controller/          # Persisted decisions, reconciliation, cancellation
 │   ├── execution/           # Ensure / Observe / Stop / Collect contract
-│   ├── backends/nativepod/  # Local Pod lifecycle
+│   ├── backends/            # Native backend, scheduling adapter and router
 │   └── pod/                 # Stable execution identity and ownership checks
 ├── config/{crd,rbac,samples}/
+├── deploy/                  # Deployment, image build and optional overlays
 ├── tests/integration/       # Isolated API server tests
 ├── examples/                # Planned Argo importer inputs
 └── docs/
@@ -166,8 +169,8 @@ make test-integration
 
 1. **单集群内核**：NativePodBackend + default-scheduler，严格导入、菱形 DAG、失败传播和重启恢复。
 2. **生命周期**：业务重试、超时、取消、结果留存和清理。
-3. **本地扩展**：先 Kueue + default-scheduler，再分别验证单集群 Volcano 组合。
-4. **跨集群**：先 MultiKueue + default-scheduler，再验证 Volcano 组合；覆盖失联、迟到结果与远端取消。
+3. **本地扩展**：通过真实调度器验收测试完善已实现的 Kueue 和 Volcano 适配器。
+4. **跨集群**：验证实验性 MultiKueue/default-scheduler 的真实分发、失联与远端取消；Volcano 组合另行设计。
 5. **规模与扩展**：根据实测决定是否拆分节点 CR、增加执行组及更多 YAML 能力。
 6. **机器学习负载优化**：建立训练与批量推理基准，逐步探索异构资源匹配、工作流并发策略、GPU 利用率与资源成本优化；按需求另行设计在线推理支持。
 
@@ -175,6 +178,8 @@ make test-integration
 
 ## 设计资料
 
+- [部署配置](deploy/README.md)：Dockerfile、Kustomize overlays、权限、安装与清理流程；实际部署和验证等待后续明确指令。
+- [调度集成指南](docs/scheduling-integrations.md)：支持组合、配置示例、可选 RBAC 与验收边界。
 - [开发与本地运行](docs/development.md)：已实现范围、命令、API 行为与验证边界。
 - [架构与执行协议](docs/design.md)：状态权威、reconcile 顺序、重试和取消、模块边界、验收用例及开放问题。
 - [执行抽象](docs/execution-abstraction.md)：原生 Pod 首版、完整生命周期接口、可选依赖与后续后端扩展。

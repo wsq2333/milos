@@ -1,10 +1,10 @@
 # Milos architecture and execution protocol
 
-Status: target design with an initial native Pod implementation. See [development status](development.md) for implemented scope and validation; interfaces and examples below also include planned capabilities. Updated: 2026-11-06.
+Status: target design with a native Pod core and experimental optional scheduling adapters. See [development status](development.md) and [scheduling integrations](scheduling-integrations.md) for the implemented contract and validation boundaries. Interfaces and examples below also include planned capabilities.
 
 Milos targets machine learning training and inference on heterogeneous CPU/GPU Kubernetes clusters, with the long-term goal of improving workflow scheduling and resource allocation. This document defines the initial execution core supporting that goal. API fields, scale limits, and failure-handling details still require prototype validation.
 
-The first release supports only native Pods with default-scheduler in one cluster. References to Kueue, MultiKueue, and Volcano describe future extensions, not initial dependencies. See the [execution abstraction](execution-abstraction.md) for interfaces, configuration, and staged delivery.
+The default path uses native Pods with default-scheduler in one cluster. Experimental Kueue, MultiKueue and Volcano adapters are optional dependencies; planned retry and fencing semantics below are not all implemented. See the [execution abstraction](execution-abstraction.md) for interfaces, configuration, and staged delivery.
 
 ## 1. Architecture decisions
 

@@ -1,6 +1,6 @@
 # Execution abstraction: native Pods and optional scheduling integrations
 
-Status: target design with an initial native Pod implementation. See [development status](development.md) for implemented scope and validation; interfaces and examples below also include planned capabilities. The first release is explicitly limited to **native Pods with default-scheduler in a single cluster**. Kueue, MultiKueue, and Volcano are future optional capabilities. This document refines the execution boundaries in the [architecture design](design.md).
+Status: target design with a native Pod core and experimental optional scheduling adapters. See [development status](development.md) and [scheduling integrations](scheduling-integrations.md) for the implemented contract and validation boundaries. Interfaces and examples below also include planned capabilities.
 
 ## 1. Abstract one execution
 
@@ -16,11 +16,11 @@ flowchart TD
     R --> B[ExecutionBackend lifecycle interface]
     B --> N[NativePodBackend / first release]
     N --> K[Local Pod + default-scheduler]
-    B -. Future .-> Q[KueuePodBackend]
-    B -. Future .-> M[MultiKueuePodBackend]
+    B --> Q[Kueue Pod lifecycle]
+    B --> M[MultiKueue Pod lifecycle]
     Q --> L[Local Pod + Kueue]
     M --> MP[Manager Pod and remote lifecycle]
-    S[Scheduling policy / default or future Volcano] -. Configuration and auxiliary resources .-> N
+    S[Scheduling policy / default or Volcano] -. Configuration and auxiliary resources .-> N
     S -. Configuration and auxiliary resources .-> Q
     S -. Configuration and auxiliary resources .-> M
 ```
@@ -39,15 +39,15 @@ Initially, express these dimensions as typed configuration and module responsibi
 
 A Pod's `spec.schedulerName` selects its scheduler; it does not automatically provide quota admission or cross-cluster dispatch. [Kubernetes multiple-scheduler documentation](https://kubernetes.io/docs/tasks/extend-kubernetes/configure-multiple-schedulers/)
 
-Expand the following allowlist incrementally. Reject combinations that are unimplemented or unvalidated at submission:
+The implemented allowlist is explicit. Optional combinations remain experimental until live acceptance is complete:
 
 | Backend | Admission | Placement | Scheduler | Delivery stage |
 | --- | --- | --- | --- | --- |
-| native-pod | None | Local | default-scheduler | The only initial combination |
-| kueue-pod | Kueue | Local | default-scheduler | Second stage |
-| native-pod / kueue-pod | None / Kueue | Local | Volcano | Enable each combination after separate validation |
-| multikueue-pod | Kueue | MultiKueue | default-scheduler | Multi-cluster stage |
-| multikueue-pod | Kueue | MultiKueue | Volcano | Final combination to validate |
+| native-pod | None | Local | default-scheduler | Default baseline |
+| kueue-pod | Kueue | Local | default-scheduler | Experimental adapter |
+| native-pod / kueue-pod | None / Kueue | Local | Volcano | Experimental adapters; validate each combination separately |
+| multikueue-pod | Kueue | MultiKueue | default-scheduler | Experimental adapter; live acceptance pending |
+| multikueue-pod | Kueue | MultiKueue | Volcano | Rejected; future design |
 
 Changing the scheduler does not necessarily require a new backend type. Introduce a backend when the execution lifecycle protocol changes materially. If Volcano requires auxiliary objects, their lifecycle belongs to the execution backend. Multi-Pod gangs change the execution unit and are outside the initial interface contract.
 
@@ -68,9 +68,9 @@ spec:
       name: default-scheduler
 ```
 
-Users may omit the entire execution block; the importer/API defaults and persists this snapshot. Validation derives the backend from an allowed configuration combination. Reject directly submitted backend values that conflict with the other fields rather than silently choosing one. Initially, nonempty queueRef, MultiKueue, or Volcano configuration returns UnsupportedExecutionConfiguration.
+Users may omit the entire execution block; the importer/API defaults and persists this snapshot. Validation derives the backend from an allowed configuration combination. Reject directly submitted backend values that conflict with the other fields rather than silently choosing one. Disabled integrations and unsupported combinations fail without falling back to the native path.
 
-Future Kueue configuration adds `admission.queueRef`, referring to a LocalQueue in the WorkflowRun namespace. MultiKueue configuration selects a platform-configured dispatch policy; users cannot supply arbitrary strings as worker credentials. Validate scheduling configuration for the actual backend rather than passing through arbitrary JSON extension fields.
+Kueue configuration uses `admission.queueRef`, referring to a LocalQueue in the WorkflowRun namespace. MultiKueue configuration selects a platform-configured dispatch policy; users cannot supply arbitrary strings as worker credentials. Validate scheduling configuration for the actual backend rather than passing through arbitrary JSON extension fields.
 
 An ExecutionProfile CRD is unnecessary initially. Named profiles may be added later, but WorkflowRun creation must resolve them into a configuration snapshot with a version/digest. Profile updates cannot change in-flight workflows. Controller upgrades must continue supporting in-flight contractVersion values. If a backend is unavailable, stop creation and report the reason rather than falling back to native-pod.
 
@@ -164,17 +164,17 @@ Startup installs/discovers only WorkflowRun and native Kubernetes APIs, watches 
 
 Installing Kueue in a cluster does not mean it should manage native-pod executions. Deployment must establish explicit namespace/admission scope. native-pod must not remove another controller's gates. If the environment unexpectedly injects execution-control fields outside this backend's ownership, report a policy conflict or waiting reason and correct deployment configuration.
 
-## 7. Adding future integrations
+## 7. Optional integration responsibilities
 
 ### Kueue: local admission lifecycle
 
-KueuePodBackend reuses the Pod builder, identity checks, and basic status parsing, then adds queue mapping, Workload associations, admission observation, eviction classification, and cleanup coordination. Kueue owns its gates and Workloads; Milos does not mark them admitted or remove their gates.
+The Kueue path in `scheduledpod.Backend` reuses the Pod builder, identity checks, and basic status parsing, then adds queue mapping, Workload associations, admission observation, eviction classification, and cleanup coordination. Kueue owns its gates and Workloads; Milos does not mark them admitted or remove their gates.
 
 A `DecoratePod()` function alone is insufficient. Missing Pods need admission/eviction context and may require a recovery protocol. Reuse shared functions or concrete collaborators rather than requiring one backend to wrap another and override half its methods.
 
 ### MultiKueue: remote facts and stop confirmation
 
-MultiKueuePodBackend still creates manager Pods, delegates dispatch upstream, and returns the normalized observation model. Remote status synchronization for plain Pods is documented, but cleanup confirmation and redispatch isolation still require version-specific validation. [MultiKueue documentation](https://kueue.sigs.k8s.io/v0.20/docs/tasks/run/multikueue/plain_pods/)
+The MultiKueue path in `scheduledpod.Backend` creates manager Pods, delegates dispatch upstream, and returns the normalized observation model. Remote status synchronization for plain Pods is documented, but cleanup confirmation and redispatch isolation still require version-specific validation. [MultiKueue documentation](https://kueue.sigs.k8s.io/v0.20/docs/tasks/run/multikueue/plain_pods/)
 
 Do not reuse NativePodBackend's local-deletion completion rule: manager NotFound does not establish that a worker has stopped. Encapsulate remote UIDs, Workload associations, connectivity diagnostics, and any necessary cleanup receipts in this backend while sharing node finalization and DAG dependency logic.
 
@@ -186,7 +186,7 @@ Start with concrete scheduler configuration compilation functions, without requi
 
 ## 8. Optional dependencies, versions, and watches
 
-Enable backends explicitly through startup configuration, then validate their APIs, permissions, and configuration. Register dynamic watches and indexes only for enabled backends. Missing Workload GVKs must not break startup of the default path. Registering Go API types in a scheme is different from actual discovery/list/watch and does not itself establish a runtime dependency.
+Enable backends explicitly through startup configuration, then validate their APIs, permissions, and configuration. The current implementation uses direct reads and periodic reconciliation for optional resources; future dynamic watches and indexes must be registered only for enabled backends. Missing Workload GVKs must not break startup of the default path. Registering Go API types in a scheme is different from actual discovery/list/watch and does not itself establish a runtime dependency.
 
 If an enabled backend lacks a dependency, report its configuration as unavailable and prevent submissions on that path. Preserve in-flight workflow state while waiting for repair; never silently downgrade execution. A failure of that optional API must not disrupt native-pod executions that do not use it. Health reporting and metrics should distinguish controller liveness from individual backend availability.
 
@@ -196,24 +196,17 @@ Watches only map resources to workflows; mapping rules belong to backend startup
 
 ```text
 internal/
-├── workflow/                 # Domain model and pure planner
-├── controller/               # Lifecycle coordination, status writes, and execution intent
-├── execution/
-│   ├── contract.go           # Request/Handle/Observation/Backend
-│   ├── config.go             # Defaults, combination validation, and configuration versions
-│   └── registry.go           # Resolve explicitly enabled backends only
+├── workflow/                 # Pure DAG validation and planner
+├── controller/               # Lifecycle coordination and durable state
+├── execution/                # Contract and configuration validation
 ├── backends/
-│   └── nativepod/            # The only initial implementation
-├── pod/                      # Shared builder, identity, and basic observation helpers
-└── observability/
-
-# Add these only when their implementations are needed:
-internal/backends/kueuepod/
-internal/backends/multikueuepod/
-internal/scheduling/volcano/
+│   ├── router.go             # Select the execution path
+│   ├── nativepod/            # Default local execution
+│   └── scheduledpod/         # Kueue, MultiKueue and Volcano adapters
+└── pod/                      # Shared lifecycle, builder and identity checks
 ```
 
-The dependency direction is `controller → execution contract ← backends`; the planner does not depend on backends. The startup entrypoint injects NativePodBackend. Backends neither call the planner nor patch WorkflowRun/status directly. Do not create empty future modules or import all external integrations in the first release.
+The dependency direction is `controller → execution contract ← backends`; the planner does not depend on backends. The startup entrypoint injects a router. Backends neither call the planner nor patch WorkflowRun status directly. Optional APIs are accessed structurally without importing upstream controllers.
 
 ## 10. Staged validation
 

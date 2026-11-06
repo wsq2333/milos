@@ -6,15 +6,15 @@ English | [Chinese (Simplified)](README.zh-CN.md)
 
 Milos aims to improve scheduling and resource allocation for machine learning training and inference on heterogeneous Kubernetes clusters, matching each workflow stage to the CPU, GPU, and other resources it needs.
 
-The project starts with a reliable Pod workflow execution core. The current core accepts native `WorkflowRun` resources and advances DAGs through level-triggered reconciliation. A focused Argo Workflow YAML importer is planned. The first release targets native Pods and `default-scheduler` in a single cluster. Future execution backends will integrate Kueue, MultiKueue, and Volcano, providing a foundation for resource and scheduling policies tailored to machine learning workloads.
+The project starts with a reliable Pod workflow execution core. The current core accepts native `WorkflowRun` resources and advances DAGs through level-triggered reconciliation. A focused Argo Workflow YAML importer is planned. The default path uses native Pods and `default-scheduler` in a single cluster. Experimental optional adapters now integrate Kueue, MultiKueue, and Volcano, providing a foundation for resource and scheduling policies tailored to machine learning workloads.
 
 The name comes from the Mediterranean island of Milos.
 
-> Prototype stage: the Go controller, WorkflowRun CRD, DAG planner, native Pod backend, and tests are implemented. Argo import, application retries, Helm packaging, ML placement policies, and third-party scheduling integrations remain planned. This is not a production release; real workload and cluster E2E validation is still required.
+> Prototype stage: the Go controller, WorkflowRun CRD, DAG planner, native Pod backend, and tests are implemented. Optional Kueue, MultiKueue and Volcano adapters are implemented. Argo import, application retries, Helm packaging and ML placement policies remain planned. This is not a production release; real workload and cluster E2E validation is still required.
 
 ## Project description
 
-Milos is a Kubernetes-native workflow engine being developed to improve scheduling and resource allocation for machine learning training and inference across heterogeneous CPU and GPU clusters. Its initial design uses level-triggered reconciliation to execute a focused subset of Argo Workflow YAML with native Pods and the default scheduler, with an extensible execution layer for future integration with Kueue, MultiKueue, and Volcano.
+Milos is a Kubernetes-native workflow engine being developed to improve scheduling and resource allocation for machine learning training and inference across heterogeneous CPU and GPU clusters. It uses level-triggered reconciliation to execute Pod DAGs, with optional Kueue admission, MultiKueue placement and Volcano scheduling integrations. A focused Argo Workflow YAML importer and ML resource optimization policies are planned.
 
 ## Repository
 
@@ -85,20 +85,22 @@ flowchart LR
 | --- | --- |
 | Milos | DAG progression, execution identity, application retries, node results, cancellation, and cleanup coordination |
 | Kubernetes | API persistence, Pod lifecycle, and container execution facts |
-| Kueue (future) | Queues, quota, resource admission, and quota-level preemption |
-| MultiKueue (future) | Worker selection, remote task management, and status synchronization |
-| Volcano (future) | Node scheduling in the execution cluster; device capabilities depend on plugins and deployment configuration |
+| Kueue (optional) | Queues, quota, resource admission, and quota-level preemption |
+| MultiKueue (optional) | Worker selection, remote task management, and status synchronization |
+| Volcano (optional) | Node scheduling in the execution cluster; device capabilities depend on plugins and deployment configuration |
 
-Initially, NativePodBackend creates, observes, and cleans up local Pods. The DAG planner consumes normalized execution results without depending on queue or scheduler types. ExecutionBackend covers Ensure, Observe, Stop, and Collect; see the [execution abstraction](docs/execution-abstraction.md).
+NativePodBackend handles the default local path; a router selects the scheduled Pod adapter for optional integrations. The DAG planner consumes normalized execution results without depending on queue or scheduler types. ExecutionBackend covers Ensure, Observe, Stop, and Collect; see the [execution abstraction](docs/execution-abstraction.md).
 
-In the future multi-cluster mode, WorkflowRun stays on the manager. Milos creates a manager Pod and delegates remote Pod management to MultiKueue, rather than implementing a competing remote submitter. Single-cluster mode observes the actual execution Pod directly.
+In the experimental multi-cluster mode, WorkflowRun stays on the manager. Milos creates a manager Pod and delegates remote Pod management to MultiKueue, rather than implementing a competing remote submitter. Single-cluster mode observes the actual execution Pod directly.
 
-MultiKueue documents scheduling gates on manager plain Pods and remote status synchronization. This supports the proposed design, but does not establish that Milos cancellation, recovery, or cleanup has been validated. [Upstream documentation](https://kueue.sigs.k8s.io/v0.20/docs/tasks/run/multikueue/plain_pods/)
+Milos reads worker Pods directly before accepting remote results, and waits for worker resource absence during cancellation. Manager-mirrored status alone is insufficient. Worker disconnection blocks confirmation. These checks do not provide distributed fencing or exactly-once side effects. See [scheduling integrations](docs/scheduling-integrations.md) for configuration, permissions and validation limits.
+
+Supported modes are native/default, native/Volcano, local Kueue/default, local Kueue/Volcano, and MultiKueue/default. MultiKueue/Volcano and multi-Pod gangs are rejected. Optional flags default to disabled; Kueue v1beta2 and Volcano v1beta1 APIs are required.
 
 ## State progression
 
 ```text
-Read WorkflowRun and observe resources through the backend (Pods only initially)
+Read WorkflowRun and observe resources through the backend (Pods and optional scheduling resources)
 → Validate ownership, current attempt, and resource UID
 → Normalize current observations
 → Persist node results and the next execution intent
@@ -134,9 +136,10 @@ milos/
 │   ├── workflow/            # Pure DAG validation and planner
 │   ├── controller/          # Persisted decisions, reconciliation, cancellation
 │   ├── execution/           # Ensure / Observe / Stop / Collect contract
-│   ├── backends/nativepod/  # Local Pod lifecycle
+│   ├── backends/            # Native backend, scheduling adapter and router
 │   └── pod/                 # Stable execution identity and ownership checks
 ├── config/{crd,rbac,samples}/
+├── deploy/                  # Deployment, image build and optional overlays
 ├── tests/integration/       # Isolated API server tests
 ├── examples/                # Planned Argo importer inputs
 └── docs/
@@ -166,8 +169,8 @@ The integration target starts its own API server and etcd, downloading Kubernete
 
 1. **Single-cluster core:** NativePodBackend with default-scheduler, strict import, a diamond DAG, failure propagation, and restart recovery.
 2. **Lifecycle:** application retries, timeouts, cancellation, result retention, and cleanup.
-3. **Local integrations:** Kueue with default-scheduler first, followed by separately validated single-cluster Volcano combinations.
-4. **Multiple clusters:** MultiKueue with default-scheduler first, then Volcano combinations; cover disconnection, delayed results, and remote cancellation.
+3. **Local integrations:** harden the implemented Kueue and Volcano adapters with real scheduler acceptance tests.
+4. **Multiple clusters:** validate the experimental MultiKueue/default-scheduler adapter with real dispatch, disconnection and remote cancellation; design Volcano combinations separately.
 5. **Scale and extensions:** use measurements to decide whether to split out node CRs, introduce execution groups, or expand the YAML subset.
 6. **ML workload optimization:** establish training and batch-inference benchmarks; explore heterogeneous resource matching, workflow concurrency policies, GPU utilization, and resource cost. Design online inference support separately as needed.
 
@@ -175,6 +178,8 @@ Each stage has independent acceptance criteria. Third-party integrations do not 
 
 ## Design documents
 
+- [Deployment configuration](deploy/README.md): Dockerfile, Kustomize overlays, permissions, installation and cleanup procedures. Deployment and live verification await explicit instruction.
+- [Scheduling integrations](docs/scheduling-integrations.md): supported combinations, sample configurations, optional RBAC and acceptance boundaries.
 - [Development and local execution](docs/development.md): implemented scope, commands, API behavior, and validation boundaries.
 - [Architecture and execution protocol](docs/design.md): state authority, reconciliation order, retries, cancellation, module boundaries, acceptance cases, and open questions.
 - [Execution abstraction](docs/execution-abstraction.md): the native Pod baseline, lifecycle interfaces, optional dependencies, and backend extensions.

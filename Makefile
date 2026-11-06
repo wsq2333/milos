@@ -18,7 +18,7 @@ generate:
 	go run sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION) object paths="./api/..."
 
 manifests:
-	go run sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION) crd rbac:roleName=milos-controller paths="./api/...;./internal/controller/..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac
+	go run sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION) crd rbac:roleName=milos-controller paths="./api/...;./internal/controller/...;./internal/backends/scheduledpod/..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac
 
 run:
 	go run ./cmd/controller --namespace=$(NAMESPACE)
