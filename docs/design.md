@@ -1,6 +1,6 @@
 # Milos architecture and execution protocol
 
-Status: design proposal, not implemented. Updated: 2026-11-06.
+Status: target design with an initial native Pod implementation. See [development status](development.md) for implemented scope and validation; interfaces and examples below also include planned capabilities. Updated: 2026-11-06.
 
 Milos targets machine learning training and inference on heterogeneous CPU/GPU Kubernetes clusters, with the long-term goal of improving workflow scheduling and resource allocation. This document defines the initial execution core supporting that goal. API fields, scale limits, and failure-handling details still require prototype validation.
 

@@ -1,0 +1,153 @@
+package v1alpha1
+
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// WorkflowRun is an immutable static DAG and its durable execution record.
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=mwr
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+type WorkflowRun struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              WorkflowRunSpec   `json:"spec"`
+	Status            WorkflowRunStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+type WorkflowRunList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []WorkflowRun `json:"items"`
+}
+
+// WorkflowRunSpec separates immutable execution inputs from cancellation intent.
+// +kubebuilder:validation:XValidation:rule="self.definition == oldSelf.definition",message="definition is immutable"
+// +kubebuilder:validation:XValidation:rule="self.execution == oldSelf.execution",message="execution is immutable"
+// +kubebuilder:validation:XValidation:rule="self.executionPolicy == oldSelf.executionPolicy",message="executionPolicy is immutable"
+// +kubebuilder:validation:XValidation:rule="oldSelf.desiredState != 'Cancelled' || self.desiredState == 'Cancelled'",message="cancellation cannot be reversed"
+type WorkflowRunSpec struct {
+	Definition WorkflowDefinition `json:"definition"`
+	// +kubebuilder:default={backend:native-pod,contractVersion:v1,admission:{provider:None},placement:{provider:Local},scheduler:{name:default-scheduler}}
+	Execution ExecutionConfig `json:"execution"`
+	// +kubebuilder:default={parallelism:1,maxRetries:0,workflowTimeoutSeconds:0}
+	ExecutionPolicy ExecutionPolicy `json:"executionPolicy"`
+	// +kubebuilder:default=Running
+	// +kubebuilder:validation:Enum=Running;Cancelled
+	DesiredState string `json:"desiredState"`
+}
+
+type WorkflowDefinition struct {
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=128
+	// +listType=map
+	// +listMapKey=name
+	Nodes []NodeSpec `json:"nodes"`
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	// +optional
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+}
+
+type NodeSpec struct {
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+	// +optional
+	// +kubebuilder:validation:MaxItems=128
+	// +listType=set
+	Dependencies []string      `json:"dependencies,omitempty"`
+	Container    ContainerSpec `json:"container"`
+}
+
+// ContainerSpec deliberately exposes a restricted Pod input surface.
+type ContainerSpec struct {
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
+	// +optional
+	Command []string `json:"command,omitempty"`
+	// +optional
+	Args []string `json:"args,omitempty"`
+	// +optional
+	Env []corev1.EnvVar `json:"env,omitempty"`
+	// +optional
+	// +kubebuilder:default={}
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
+	// +optional
+	WorkingDir string `json:"workingDir,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+}
+
+type ExecutionConfig struct {
+	// +kubebuilder:validation:Enum=native-pod
+	Backend string `json:"backend"`
+	// +kubebuilder:validation:Enum=v1
+	ContractVersion string          `json:"contractVersion"`
+	Admission       AdmissionConfig `json:"admission"`
+	Placement       PlacementConfig `json:"placement"`
+	Scheduler       SchedulerConfig `json:"scheduler"`
+}
+
+type AdmissionConfig struct {
+	// +kubebuilder:validation:Enum=None
+	Provider string `json:"provider"`
+}
+
+type PlacementConfig struct {
+	// +kubebuilder:validation:Enum=Local
+	Provider string `json:"provider"`
+}
+
+type SchedulerConfig struct {
+	// +kubebuilder:validation:Enum=default-scheduler
+	Name string `json:"name"`
+}
+
+type ExecutionPolicy struct {
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=128
+	// +kubebuilder:default=1
+	Parallelism int32 `json:"parallelism"`
+	// MaxRetries is reserved; nonzero values are not implemented.
+	// +kubebuilder:validation:Enum=0
+	// +kubebuilder:default=0
+	MaxRetries int32 `json:"maxRetries"`
+	// Zero disables the workflow deadline.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=604800
+	// +kubebuilder:default=0
+	WorkflowTimeoutSeconds int64 `json:"workflowTimeoutSeconds"`
+}
+
+type WorkflowRunStatus struct {
+	ObservedGeneration int64                 `json:"observedGeneration,omitempty"`
+	DefinitionDigest   string                `json:"definitionDigest,omitempty"`
+	Phase              string                `json:"phase,omitempty"`
+	StopReason         string                `json:"stopReason,omitempty"`
+	Nodes              map[string]NodeStatus `json:"nodes,omitempty"`
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type NodeStatus struct {
+	Phase                   string `json:"phase"`
+	Attempt                 int32  `json:"attempt"`
+	DispatchGeneration      int32  `json:"dispatchGeneration"`
+	ExecutionIntentRecorded bool   `json:"executionIntentRecorded,omitempty"`
+	PodName                 string `json:"podName,omitempty"`
+	PodUID                  string `json:"podUID,omitempty"`
+	Reason                  string `json:"reason,omitempty"`
+	CleanupComplete         bool   `json:"cleanupComplete,omitempty"`
+}

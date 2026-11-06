@@ -1,0 +1,44 @@
+apiVersion: milos.example.io/v1alpha1
+kind: WorkflowRun
+metadata:
+  name: diamond
+spec:
+  desiredState: Running
+  execution:
+    backend: native-pod
+    contractVersion: v1
+    admission:
+      provider: None
+    placement:
+      provider: Local
+    scheduler:
+      name: default-scheduler
+  executionPolicy:
+    parallelism: 2
+    maxRetries: 0
+    workflowTimeoutSeconds: 600
+  definition:
+    nodes:
+      - name: prepare
+        container:
+          image: busybox:1.37.0
+          command: [sh, -c]
+          args: ['echo prepare']
+      - name: train-a
+        dependencies: [prepare]
+        container:
+          image: busybox:1.37.0
+          command: [sh, -c]
+          args: ['echo train-a']
+      - name: train-b
+        dependencies: [prepare]
+        container:
+          image: busybox:1.37.0
+          command: [sh, -c]
+          args: ['echo train-b']
+      - name: evaluate
+        dependencies: [train-a, train-b]
+        container:
+          image: busybox:1.37.0
+          command: [sh, -c]
+          args: ['echo evaluate']

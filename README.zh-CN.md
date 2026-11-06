@@ -6,11 +6,11 @@
 
 Milos 的长期目标是提升机器学习训练与推理工作流在异构 Kubernetes 集群中的调度效率和资源分配效率，让不同阶段的计算需求与 CPU、GPU 及其他资源能力更好地匹配。
 
-项目从可靠的 Pod 工作流执行内核起步：接收 Argo Workflow YAML 的简单子集，以 level-triggered reconciliation 推进 DAG。首版支持单集群原生 Pod 与 `default-scheduler`，后续通过执行后端扩展 Kueue、MultiKueue 和 Volcano，并逐步探索面向机器学习负载的资源与调度策略。
+项目从可靠的 Pod 工作流执行内核起步：当前内核接收原生 `WorkflowRun` 资源，以 level-triggered reconciliation 推进 DAG；Argo Workflow YAML 简单子集导入器仍在规划中。首版支持单集群原生 Pod 与 `default-scheduler`，后续通过执行后端扩展 Kueue、MultiKueue 和 Volcano，并逐步探索面向机器学习负载的资源与调度策略。
 
 名字取自地中海的米洛斯岛。
 
-> 当前处于设计阶段。仓库包含设计文档与输入示例，尚无 controller、CLI、CRD 安装包或可运行版本。下文描述的是目标行为，集群集成尚未验收。
+> 当前处于原型阶段：已实现 Go controller、WorkflowRun CRD、DAG planner、原生 Pod 后端及测试。Argo 导入、业务重试、Helm 打包、机器学习资源选择策略与第三方调度集成仍在规划中。尚非生产版本，仍需真实负载与集群 E2E 验证。
 
 ## English description
 
@@ -25,7 +25,7 @@ git clone https://github.com/wsq2333/milos.git
 cd milos
 ```
 
-可先阅读 [架构设计](docs/design.md) 和 [执行抽象](docs/execution-abstraction.md)。计划中的 Go module 路径为 `github.com/wsq2333/milos`；当前尚未添加 Go module 或可运行实现。
+可先阅读 [架构设计](docs/design.md) 和 [执行抽象](docs/execution-abstraction.md)。Go module 路径为 `github.com/wsq2333/milos`。构建命令、CRD 安装方法和当前实现边界见 [开发与本地运行指南](docs/development.md)。
 
 ## 项目目标
 
@@ -44,7 +44,7 @@ cd milos
 
 核心验收标准：controller 在任意步骤重启后，仅凭持久化对象恢复进度；不会因为重复 reconcile 创建同一执行身份的第二个任务，也不会漏掉已满足依赖的后继。跨集群故障下的业务副作用仍由应用保证幂等。
 
-## 第一版范围
+## 第一版目标范围
 
 | 能力 | 设计范围 |
 | --- | --- |
@@ -65,20 +65,20 @@ cd milos
 ## 整体架构
 
 ```mermaid
-flowchart TD
-    Y[Argo YAML 简单子集] --> I[导入与严格校验]
-    I --> W[WorkflowRun CR / manager]
-    W --> R[Milos Reconciler]
-    R --> P[纯逻辑 DAG Planner]
+flowchart LR
+    W["WorkflowRun<br/>spec：定义和策略<br/>status：执行记录"]
+    R["Reconciler<br/>协调与持久化"]
+    P["DAG Planner<br/>计算就绪节点"]
+    B["ExecutionBackend<br/>管理一次执行"]
+    K["Kubernetes Pod"]
+
+    W --> R
+    R --> P
     P --> R
-    R --> E[ExecutionBackend]
-    E --> N[NativePodBackend / 首版]
-    N --> LP[本集群 Pod + default-scheduler]
-    LP -. 统一观察结果 .-> R
-    E -. 后续 .-> K[KueuePodBackend]
-    E -. 后续 .-> M[MultiKueuePodBackend]
-    V[Volcano 调度策略 / 后续] -. 可选配置 .-> E
-    R -. 已确认结果 .-> W
+    R --> B
+    B --> K
+    K -.观察结果.-> R
+    R -.写入 status.-> W
 ```
 
 | 组件 | 唯一负责的事情 |
@@ -124,31 +124,43 @@ Pod 成功结果必须先保存，后继才能启动，Milos 管理的 GC 才能
 
 这是未来导入器的输入样例，当前不能用 Milos 执行。计划中的导入路径是「校验 Argo YAML → 编译不可变定义 → 创建 WorkflowRun」；直接 `kubectl apply` 该文件会创建 Argo 的 Workflow，而不是 Milos WorkflowRun。
 
-## 代码结构与技术栈
-
-以下是计划结构；目前仓库包含文档、项目协作约定和示例：
+## 已实现的核心结构与 Go 依赖
 
 ```text
 milos/
-├── cmd/controller/          # controller manager
-├── cmd/milosctl/            # 校验、导入、查询、取消
-├── api/v1alpha1/            # WorkflowRun 类型
+├── cmd/controller/          # Namespace-scoped controller manager
+├── api/v1alpha1/            # WorkflowRun API and generated deep-copy methods
 ├── internal/
-│   ├── argoyaml/            # 严格解析与编译
-│   ├── workflow/           # 模型、DAG 校验、纯逻辑 planner
-│   ├── controller/         # 读取、reconcile、冲突处理
-│   ├── execution/          # 生命周期契约、配置校验、后端选择
-│   ├── backends/nativepod/ # 首版唯一后端
-│   ├── pod/                # Pod 构建、身份、观察、清理
-│   └── observability/      # 日志、指标、诊断
-├── config/{crd,rbac}/
-├── charts/milos/            # 首版单集群部署；worker 部署后续增加
-├── examples/
-├── docs/
-└── tests/{integration,e2e}/
+│   ├── workflow/            # Pure DAG validation and planner
+│   ├── controller/          # Persisted decisions, reconciliation, cancellation
+│   ├── execution/           # Ensure / Observe / Stop / Collect contract
+│   ├── backends/nativepod/  # Local Pod lifecycle
+│   └── pod/                 # Stable execution identity and ownership checks
+├── config/{crd,rbac,samples}/
+├── tests/integration/       # Isolated API server tests
+├── examples/                # Planned Argo importer inputs
+└── docs/
 ```
 
-采用 Go、controller-runtime/client-go、CRD status subresource、controller-gen、Helm、结构化日志和 Prometheus。测试分为 planner 单元测试、envtest API 集成测试与真实多集群 E2E。具体版本组合将在原型阶段锁定，不承诺任意版本兼容。
+| 依赖 | 固定版本 |
+| --- | --- |
+| Go 语言与工具链最低版本 | 1.26.0 |
+| controller-runtime | v0.24.0 |
+| Kubernetes api / apimachinery / client-go | v0.36.0 |
+| controller-gen | v0.21.0 |
+
+运行时模块校验和记录在 `go.sum` 中；代码生成器在 Makefile 中固定版本，以独立的 Go 工具模块上下文运行。
+
+```sh
+go mod download
+make build test vet
+make generate manifests
+make test-integration
+```
+
+原生 [WorkflowRun 菱形示例](config/samples/diamond.yaml) 是当前 controller 接收的输入。已实现依赖推进、并行度限制、独立分支继续执行、取消、工作流超时、稳定 Pod 身份与删除清理。创建 Pod 前先持久化执行意图，启动后继前先持久化前驱结果。`maxRetries` 必须为零；已结束 Pod 保留至活跃工作流取消或 WorkflowRun 删除，自动结果回收尚未接入 reconcile。
+
+集成测试会启动独立 API Server 和 etcd，按需下载 Kubernetes 1.36.0 测试二进制；不会运行容器，也不会使用当前集群。连接集群运行 controller 前，请阅读 [开发指南](docs/development.md)。
 
 ## 实施顺序
 
@@ -163,6 +175,7 @@ milos/
 
 ## 设计资料
 
+- [开发与本地运行](docs/development.md)：已实现范围、命令、API 行为与验证边界。
 - [架构与执行协议](docs/design.md)：状态权威、reconcile 顺序、重试和取消、模块边界、验收用例及开放问题。
 - [执行抽象](docs/execution-abstraction.md)：原生 Pod 首版、完整生命周期接口、可选依赖与后续后端扩展。
 - [Argo 输入契约](docs/argo-subset.md)：白名单、拒绝规则与语义差异。

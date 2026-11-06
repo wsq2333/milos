@@ -1,6 +1,6 @@
 # Execution abstraction: native Pods and optional scheduling integrations
 
-Status: design proposal, not implemented. The first release is explicitly limited to **native Pods with default-scheduler in a single cluster**. Kueue, MultiKueue, and Volcano are future optional capabilities. This document refines the execution boundaries in the [architecture design](design.md).
+Status: target design with an initial native Pod implementation. See [development status](development.md) for implemented scope and validation; interfaces and examples below also include planned capabilities. The first release is explicitly limited to **native Pods with default-scheduler in a single cluster**. Kueue, MultiKueue, and Volcano are future optional capabilities. This document refines the execution boundaries in the [architecture design](design.md).
 
 ## 1. Abstract one execution
 

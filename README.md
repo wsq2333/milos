@@ -6,11 +6,11 @@ English | [Chinese (Simplified)](README.zh-CN.md)
 
 Milos aims to improve scheduling and resource allocation for machine learning training and inference on heterogeneous Kubernetes clusters, matching each workflow stage to the CPU, GPU, and other resources it needs.
 
-The project starts with a reliable Pod workflow execution core. It accepts a focused subset of Argo Workflow YAML and advances DAGs through level-triggered reconciliation. The first release targets native Pods and `default-scheduler` in a single cluster. Future execution backends will integrate Kueue, MultiKueue, and Volcano, providing a foundation for resource and scheduling policies tailored to machine learning workloads.
+The project starts with a reliable Pod workflow execution core. The current core accepts native `WorkflowRun` resources and advances DAGs through level-triggered reconciliation. A focused Argo Workflow YAML importer is planned. The first release targets native Pods and `default-scheduler` in a single cluster. Future execution backends will integrate Kueue, MultiKueue, and Volcano, providing a foundation for resource and scheduling policies tailored to machine learning workloads.
 
 The name comes from the Mediterranean island of Milos.
 
-> Design stage: this repository contains design documents and input examples. It does not yet provide a controller, CLI, installable CRD package, or runnable release. The behavior described below is planned; cluster integrations have not been validated.
+> Prototype stage: the Go controller, WorkflowRun CRD, DAG planner, native Pod backend, and tests are implemented. Argo import, application retries, Helm packaging, ML placement policies, and third-party scheduling integrations remain planned. This is not a production release; real workload and cluster E2E validation is still required.
 
 ## Project description
 
@@ -25,7 +25,7 @@ git clone https://github.com/wsq2333/milos.git
 cd milos
 ```
 
-Start with the [architecture design](docs/design.md) and [execution abstraction](docs/execution-abstraction.md). The planned Go module path is `github.com/wsq2333/milos`; no Go module or runnable implementation has been added yet.
+Start with the [architecture design](docs/design.md) and [execution abstraction](docs/execution-abstraction.md). The Go module is `github.com/wsq2333/milos`. See [development and local execution](docs/development.md) for build commands, CRD installation, and the implementation boundary.
 
 ## Goals
 
@@ -44,7 +44,7 @@ Milos implements workflow progression itself. It does not run the Argo Controlle
 
 The core acceptance criterion is recovery from controller restarts at any step using only persistent objects. Repeated reconciliation must not create a second task for the same execution identity or overlook an eligible successor. Applications remain responsible for idempotent side effects under cross-cluster failures.
 
-## First-release scope
+## First-release target scope
 
 | Capability | Planned scope |
 | --- | --- |
@@ -65,20 +65,20 @@ Unsupported execution fields must produce errors rather than being silently disc
 ## Architecture
 
 ```mermaid
-flowchart TD
-    Y[Argo YAML subset] --> I[Import and strict validation]
-    I --> W[WorkflowRun CR / manager]
-    W --> R[Milos Reconciler]
-    R --> P[Pure DAG Planner]
+flowchart LR
+    W["WorkflowRun<br/>spec: definition and policy<br/>status: execution record"]
+    R["Reconciler<br/>Coordination and persistence"]
+    P["DAG Planner<br/>Compute ready nodes"]
+    B["ExecutionBackend<br/>Manage one execution"]
+    K["Kubernetes Pod"]
+
+    W --> R
+    R --> P
     P --> R
-    R --> E[ExecutionBackend]
-    E --> N[NativePodBackend / first release]
-    N --> LP[Local Pod + default-scheduler]
-    LP -. Normalized observations .-> R
-    E -. Future .-> K[KueuePodBackend]
-    E -. Future .-> M[MultiKueuePodBackend]
-    V[Volcano scheduling policy / future] -. Optional configuration .-> E
-    R -. Confirmed results .-> W
+    R --> B
+    B --> K
+    K -. Observations .-> R
+    R -. Persist status .-> W
 ```
 
 | Component | Responsibility |
@@ -124,31 +124,43 @@ Pod success must be persisted before successors can start or Milos-managed garba
 
 This is an input example for the future importer; Milos cannot execute it yet. The planned import path is: validate Argo YAML, compile an immutable definition, then create a WorkflowRun. Applying the file directly with `kubectl apply` targets an Argo Workflow, not a Milos WorkflowRun.
 
-## Planned code structure and stack
-
-The structure below is planned. The repository currently contains documentation, contributor instructions, and examples only.
+## Implemented core and Go dependencies
 
 ```text
 milos/
-├── cmd/controller/          # Controller manager
-├── cmd/milosctl/            # Validation, import, queries, and cancellation
-├── api/v1alpha1/            # WorkflowRun types
+├── cmd/controller/          # Namespace-scoped controller manager
+├── api/v1alpha1/            # WorkflowRun API and generated deep-copy methods
 ├── internal/
-│   ├── argoyaml/            # Strict parsing and compilation
-│   ├── workflow/           # Model, DAG validation, and pure planner
-│   ├── controller/         # Reads, reconciliation, and conflict handling
-│   ├── execution/          # Lifecycle contract, validation, and backend selection
-│   ├── backends/nativepod/ # The only initial backend
-│   ├── pod/                # Construction, identity, observation, and cleanup
-│   └── observability/      # Logs, metrics, and diagnostics
-├── config/{crd,rbac}/
-├── charts/milos/            # Single-cluster deployment; worker deployment comes later
-├── examples/
-├── docs/
-└── tests/{integration,e2e}/
+│   ├── workflow/            # Pure DAG validation and planner
+│   ├── controller/          # Persisted decisions, reconciliation, cancellation
+│   ├── execution/           # Ensure / Observe / Stop / Collect contract
+│   ├── backends/nativepod/  # Local Pod lifecycle
+│   └── pod/                 # Stable execution identity and ownership checks
+├── config/{crd,rbac,samples}/
+├── tests/integration/       # Isolated API server tests
+├── examples/                # Planned Argo importer inputs
+└── docs/
 ```
 
-The planned stack is Go, controller-runtime/client-go, CRD status subresources, controller-gen, Helm, structured logging, and Prometheus. Validation will combine planner unit tests, envtest API integration tests, and real multi-cluster E2E tests. Exact version combinations will be pinned during prototyping; arbitrary version compatibility is not promised.
+| Dependency | Pinned version |
+| --- | --- |
+| Go language/toolchain minimum | 1.26.0 |
+| controller-runtime | v0.24.0 |
+| Kubernetes api / apimachinery / client-go | v0.36.0 |
+| controller-gen | v0.21.0 |
+
+Runtime module checksums are recorded in `go.sum`. The code generator is version-pinned in the Makefile and runs in a separate Go tool module context.
+
+```sh
+go mod download
+make build test vet
+make generate manifests
+make test-integration
+```
+
+The native [WorkflowRun diamond example](config/samples/diamond.yaml) is the current controller input. Implemented behavior includes dependency progression, bounded parallelism, independent-branch continuation, cancellation, workflow deadlines, stable Pod identity, and deletion cleanup. Creation intent is persisted before creating a Pod; terminal results are persisted before enabling successors. `maxRetries` must be zero. Finished Pods are retained until active-run cancellation or WorkflowRun deletion; automatic result collection is not yet wired into reconciliation.
+
+The integration target starts its own API server and etcd, downloading Kubernetes 1.36.0 test binaries if needed. It does not run containers or use your current cluster. See [development instructions](docs/development.md) before starting the controller against a cluster.
 
 ## Roadmap
 
@@ -163,6 +175,7 @@ Each stage has independent acceptance criteria. Third-party integrations do not 
 
 ## Design documents
 
+- [Development and local execution](docs/development.md): implemented scope, commands, API behavior, and validation boundaries.
 - [Architecture and execution protocol](docs/design.md): state authority, reconciliation order, retries, cancellation, module boundaries, acceptance cases, and open questions.
 - [Execution abstraction](docs/execution-abstraction.md): the native Pod baseline, lifecycle interfaces, optional dependencies, and backend extensions.
 - [Argo input contract](docs/argo-subset.md): supported fields, rejection rules, and semantic differences.
