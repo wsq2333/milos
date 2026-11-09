@@ -10,7 +10,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-const NativeBackend = "native-pod"
+const (
+	NativeBackend     = "native-pod"
+	KueueBackend      = "kueue-pod"
+	MultiKueueBackend = "multikueue-pod"
+)
 
 var (
 	ErrIdentityConflict  = errors.New("execution identity conflict")
@@ -25,7 +29,17 @@ type Key struct {
 	DispatchGeneration int32
 }
 
+type Configuration struct {
+	Backend        string
+	Scheduler      string
+	QueueName      string
+	VolcanoQueue   string
+	AdmissionCheck string
+	WorkerClusters []string
+}
+
 type Request struct {
+	Configuration   Configuration
 	Key             Key
 	Namespace       string
 	WorkflowName    string
@@ -35,13 +49,22 @@ type Request struct {
 }
 
 // Handle is persisted by the coordinator; it contains no live API objects.
-// Only local Pod identity is needed by the initial backend.
+// Optional fields bind admission, scheduling and remote execution resources.
 type Handle struct {
-	PodName string
-	PodUID  types.UID
+	WorkloadName      string
+	WorkloadUID       types.UID
+	PodGroupUID       types.UID
+	WorkerCluster     string
+	WorkerPodUID      types.UID
+	WorkerWorkloadUID types.UID
+	PodName           string
+	PodUID            types.UID
 }
 
 type Observation struct {
+	Admission    string
+	Placement    string
+	Source       string
 	Handle       Handle
 	Phase        string
 	Reason       string

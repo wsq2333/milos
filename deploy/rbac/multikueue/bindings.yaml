@@ -1,0 +1,14 @@
+# Adjust the namespace to match the controller ServiceAccount and WorkflowRuns.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: milos-multikueue
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: milos-multikueue
+subjects:
+  - kind: ServiceAccount
+    name: milos-controller
+    namespace: default

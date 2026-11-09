@@ -56,3 +56,75 @@ rules:
   - get
   - patch
   - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: milos-kueue
+rules:
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - localqueues
+  verbs:
+  - get
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - workloads
+  verbs:
+  - delete
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: milos-kueue-policy
+rules:
+- apiGroups:
+  - kueue.x-k8s.io
+  resources:
+  - admissionchecks
+  - clusterqueues
+  - multikueueconfigs
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: milos-multikueue
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: milos-volcano
+rules:
+- apiGroups:
+  - scheduling.volcano.sh
+  resources:
+  - podgroups
+  verbs:
+  - create
+  - delete
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: milos-volcano-policy
+rules:
+- apiGroups:
+  - scheduling.volcano.sh
+  resources:
+  - queues
+  verbs:
+  - get

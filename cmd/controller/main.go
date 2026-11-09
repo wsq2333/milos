@@ -6,7 +6,9 @@ import (
 	"os"
 
 	milosv1 "github.com/wsq2333/milos/api/v1alpha1"
+	"github.com/wsq2333/milos/internal/backends"
 	"github.com/wsq2333/milos/internal/backends/nativepod"
+	"github.com/wsq2333/milos/internal/backends/scheduledpod"
 	"github.com/wsq2333/milos/internal/controller"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -20,6 +22,12 @@ import (
 func main() {
 	var namespace, metricsAddr, healthAddr string
 	var leaderElection bool
+	var integrations integrationOptions
+	flag.BoolVar(&integrations.kueue, "enable-kueue", false, "Enable Kueue v1beta2 admission integration")
+	flag.BoolVar(&integrations.volcano, "enable-volcano", false, "Enable Volcano v1beta1 single-Pod scheduling")
+	flag.BoolVar(&integrations.multikueue, "enable-multikueue", false, "Enable MultiKueue with worker-side observation")
+	flag.StringVar(&integrations.origin, "multikueue-origin", "multikueue", "Origin label configured on the MultiKueue manager")
+	flag.Var(&integrations.workers, "worker", "Read-only worker access as MultiKueueClusterName=kubeconfig-path (repeatable)")
 	flag.StringVar(&namespace, "namespace", "default", "Namespace to reconcile and use for leader election")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "127.0.0.1:8080", "Metrics listener (0 disables it)")
 	flag.StringVar(&healthAddr, "health-probe-bind-address", "127.0.0.1:8081", "Health probe listener")
@@ -28,13 +36,13 @@ func main() {
 	logOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&logOptions)))
-	if err := run(namespace, metricsAddr, healthAddr, leaderElection); err != nil {
+	if err := run(namespace, metricsAddr, healthAddr, leaderElection, integrations); err != nil {
 		ctrl.Log.Error(err, "controller stopped")
 		os.Exit(1)
 	}
 }
 
-func run(namespace, metricsAddr, healthAddr string, leaderElection bool) error {
+func run(namespace, metricsAddr, healthAddr string, leaderElection bool, integrations integrationOptions) error {
 	if namespace == "" {
 		return fmt.Errorf("namespace must not be empty")
 	}
@@ -43,6 +51,10 @@ func run(namespace, metricsAddr, healthAddr string, leaderElection bool) error {
 		return err
 	}
 	if err := milosv1.AddToScheme(scheme); err != nil {
+		return err
+	}
+	workers, err := workerReaders(integrations, scheme)
+	if err != nil {
 		return err
 	}
 	config, err := ctrl.GetConfig()
@@ -58,7 +70,15 @@ func run(namespace, metricsAddr, healthAddr string, leaderElection bool) error {
 	if err != nil {
 		return err
 	}
-	backend := &nativepod.Backend{Client: mgr.GetClient(), Reader: mgr.GetAPIReader()}
+	backend := &backends.Router{
+		Native: &nativepod.Backend{Client: mgr.GetClient(), Reader: mgr.GetAPIReader()},
+		Scheduled: &scheduledpod.Backend{
+			Client: mgr.GetClient(), Reader: mgr.GetAPIReader(),
+			EnableKueue: integrations.kueue, EnableVolcano: integrations.volcano,
+			EnableMultiKueue: integrations.multikueue, Workers: workers, Origin: integrations.origin,
+		},
+	}
+
 	reconciler := &controller.WorkflowRunReconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Backend: backend}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err

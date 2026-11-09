@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milos-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          args:
+            - --namespace=$(POD_NAMESPACE)
+            - --leader-elect=true
+            - --metrics-bind-address=0
+            - --health-probe-bind-address=:8081
+            - --enable-kueue
+            - --enable-multikueue
+            - --multikueue-origin=multikueue
+            - --worker=worker-a=/etc/milos/workers/worker-a.kubeconfig
+            - --worker=worker-b=/etc/milos/workers/worker-b.kubeconfig
+          volumeMounts:
+            - name: worker-kubeconfigs
+              mountPath: /etc/milos/workers
+              readOnly: true
+      volumes:
+        - name: worker-kubeconfigs
+          secret:
+            secretName: milos-worker-kubeconfigs
+            defaultMode: 0444

@@ -18,9 +18,23 @@ import (
 // prepare validates the supported contract before any backend operation.
 func prepare(run *milosv1.WorkflowRun) ([]workflow.Node, string, error) {
 	s := &run.Spec
-	if s.Execution.Backend != execution.NativeBackend || s.Execution.ContractVersion != "v1" || s.Execution.Admission.Provider != "None" || s.Execution.Placement.Provider != "Local" || s.Execution.Scheduler.Name != corev1.DefaultSchedulerName {
-		return nil, "", fmt.Errorf("unsupported execution configuration; expected native-pod/v1, None admission, Local placement and default-scheduler")
+	if s.Execution.ContractVersion != "v1" {
+		return nil, "", fmt.Errorf("unsupported execution contract version")
 	}
+	if err := execution.ValidateConfiguration(configuration(s.Execution)); err != nil {
+		return nil, "", err
+	}
+	expectedAdmission, expectedPlacement := "None", "Local"
+	if s.Execution.Backend != execution.NativeBackend {
+		expectedAdmission = "Kueue"
+	}
+	if s.Execution.Backend == execution.MultiKueueBackend {
+		expectedPlacement = "MultiKueue"
+	}
+	if s.Execution.Admission.Provider != expectedAdmission || s.Execution.Placement.Provider != expectedPlacement {
+		return nil, "", fmt.Errorf("backend, admission and placement do not agree")
+	}
+
 	if s.DesiredState != "Running" && s.DesiredState != "Cancelled" {
 		return nil, "", fmt.Errorf("unsupported desiredState")
 	}
@@ -88,6 +102,7 @@ func prepare(run *milosv1.WorkflowRun) ([]workflow.Node, string, error) {
 	}
 	immutable := s.DeepCopy()
 	immutable.DesiredState = ""
+	sort.Strings(immutable.Execution.Placement.WorkerClusters)
 	// Match the order-independent semantics of CRD map and set lists.
 	sort.Slice(immutable.Definition.Nodes, func(i, j int) bool { return immutable.Definition.Nodes[i].Name < immutable.Definition.Nodes[j].Name })
 	for i := range immutable.Definition.Nodes {
@@ -108,10 +123,11 @@ func request(run *milosv1.WorkflowRun, node milosv1.NodeSpec, status milosv1.Nod
 	c := node.Container
 	automount := false
 	return execution.Request{
-		Key:       execution.Key{WorkflowUID: run.UID, NodeID: node.Name, Attempt: status.Attempt, DispatchGeneration: status.DispatchGeneration},
-		Namespace: run.Namespace, WorkflowName: run.Name, OwnerAPIVersion: milosv1.GroupVersion.String(), Digest: run.Status.DefinitionDigest,
+		Configuration: configuration(run.Spec.Execution),
+		Key:           execution.Key{WorkflowUID: run.UID, NodeID: node.Name, Attempt: status.Attempt, DispatchGeneration: status.DispatchGeneration},
+		Namespace:     run.Namespace, WorkflowName: run.Name, OwnerAPIVersion: milosv1.GroupVersion.String(), Digest: run.Status.DefinitionDigest,
 		PodSpec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever, SchedulerName: corev1.DefaultSchedulerName,
+			RestartPolicy: corev1.RestartPolicyNever, SchedulerName: run.Spec.Execution.Scheduler.Name,
 			AutomountServiceAccountToken: &automount, ServiceAccountName: run.Spec.Definition.ServiceAccountName,
 			ImagePullSecrets: run.Spec.Definition.ImagePullSecrets, Volumes: run.Spec.Definition.Volumes,
 			Containers: []corev1.Container{{Name: "main", Image: c.Image, Command: c.Command, Args: c.Args, Env: c.Env, Resources: c.Resources, VolumeMounts: c.VolumeMounts, WorkingDir: c.WorkingDir, ImagePullPolicy: c.ImagePullPolicy}},
@@ -119,6 +135,15 @@ func request(run *milosv1.WorkflowRun, node milosv1.NodeSpec, status milosv1.Nod
 	}
 }
 
+func configuration(c milosv1.ExecutionConfig) execution.Configuration {
+	return execution.Configuration{Backend: c.Backend, Scheduler: c.Scheduler.Name, QueueName: c.Admission.QueueRef, VolcanoQueue: c.Scheduler.QueueName, AdmissionCheck: c.Placement.AdmissionCheck, WorkerClusters: c.Placement.WorkerClusters}
+}
 func executionHandle(s milosv1.NodeStatus) execution.Handle {
-	return execution.Handle{PodName: s.PodName, PodUID: types.UID(s.PodUID)}
+	return execution.Handle{PodName: s.PodName, PodUID: types.UID(s.PodUID), WorkloadName: s.WorkloadName, WorkloadUID: types.UID(s.WorkloadUID), PodGroupUID: types.UID(s.PodGroupUID), WorkerCluster: s.WorkerCluster, WorkerPodUID: types.UID(s.WorkerPodUID), WorkerWorkloadUID: types.UID(s.WorkerWorkloadUID)}
+}
+func applyHandle(s *milosv1.NodeStatus, h execution.Handle) {
+	s.PodName, s.PodUID = h.PodName, string(h.PodUID)
+	s.WorkloadName, s.WorkloadUID = h.WorkloadName, string(h.WorkloadUID)
+	s.PodGroupUID = string(h.PodGroupUID)
+	s.WorkerCluster, s.WorkerPodUID, s.WorkerWorkloadUID = h.WorkerCluster, string(h.WorkerPodUID), string(h.WorkerWorkloadUID)
 }

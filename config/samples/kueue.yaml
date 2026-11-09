@@ -1,0 +1,32 @@
+apiVersion: milos.example.io/v1alpha1
+kind: WorkflowRun
+metadata:
+  name: kueue
+spec:
+  execution:
+    backend: kueue-pod
+    contractVersion: v1
+    admission:
+      provider: Kueue
+      queueRef: ml-local
+    placement:
+      provider: Local
+    scheduler:
+      name: default-scheduler
+  executionPolicy:
+    parallelism: 1
+    maxRetries: 0
+    workflowTimeoutSeconds: 600
+  definition:
+    nodes:
+      - name: train
+        container:
+          image: busybox:1.37.0
+          command: [sh, -c, 'echo replace-with-your-training-command']
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

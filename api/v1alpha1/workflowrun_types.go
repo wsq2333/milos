@@ -90,7 +90,7 @@ type ContainerSpec struct {
 }
 
 type ExecutionConfig struct {
-	// +kubebuilder:validation:Enum=native-pod
+	// +kubebuilder:validation:Enum=native-pod;kueue-pod;multikueue-pod
 	Backend string `json:"backend"`
 	// +kubebuilder:validation:Enum=v1
 	ContractVersion string          `json:"contractVersion"`
@@ -100,17 +100,34 @@ type ExecutionConfig struct {
 }
 
 type AdmissionConfig struct {
-	// +kubebuilder:validation:Enum=None
+	// QueueRef names a LocalQueue in the WorkflowRun namespace.
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	QueueRef string `json:"queueRef,omitempty"`
+	// +kubebuilder:validation:Enum=None;Kueue
 	Provider string `json:"provider"`
 }
 
 type PlacementConfig struct {
-	// +kubebuilder:validation:Enum=Local
+	// AdmissionCheck names the platform-managed MultiKueue admission check.
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	AdmissionCheck string `json:"admissionCheck,omitempty"`
+	// WorkerClusters snapshots all eligible MultiKueueCluster names.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	WorkerClusters []string `json:"workerClusters,omitempty"`
+	// +kubebuilder:validation:Enum=Local;MultiKueue
 	Provider string `json:"provider"`
 }
 
 type SchedulerConfig struct {
-	// +kubebuilder:validation:Enum=default-scheduler
+	// QueueName selects a Volcano Queue; it is separate from the Kueue LocalQueue.
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	QueueName string `json:"queueName,omitempty"`
+	// +kubebuilder:validation:Enum=default-scheduler;volcano
 	Name string `json:"name"`
 }
 
@@ -142,6 +159,16 @@ type WorkflowRunStatus struct {
 }
 
 type NodeStatus struct {
+	WorkloadName            string `json:"workloadName,omitempty"`
+	WorkloadUID             string `json:"workloadUID,omitempty"`
+	PodGroupUID             string `json:"podGroupUID,omitempty"`
+	WorkerCluster           string `json:"workerCluster,omitempty"`
+	WorkerPodUID            string `json:"workerPodUID,omitempty"`
+	WorkerWorkloadUID       string `json:"workerWorkloadUID,omitempty"`
+	Admission               string `json:"admission,omitempty"`
+	Placement               string `json:"placement,omitempty"`
+	ObservationSource       string `json:"observationSource,omitempty"`
+	FailureClass            string `json:"failureClass,omitempty"`
 	Phase                   string `json:"phase"`
 	Attempt                 int32  `json:"attempt"`
 	DispatchGeneration      int32  `json:"dispatchGeneration"`

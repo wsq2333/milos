@@ -2341,6 +2341,12 @@ spec:
                       provider:
                         enum:
                         - None
+                        - Kueue
+                        type: string
+                      queueRef:
+                        description: QueueRef names a LocalQueue in the WorkflowRun
+                          namespace.
+                        maxLength: 253
                         type: string
                     required:
                     - provider
@@ -2348,6 +2354,8 @@ spec:
                   backend:
                     enum:
                     - native-pod
+                    - kueue-pod
+                    - multikueue-pod
                     type: string
                   contractVersion:
                     enum:
@@ -2355,10 +2363,24 @@ spec:
                     type: string
                   placement:
                     properties:
+                      admissionCheck:
+                        description: AdmissionCheck names the platform-managed MultiKueue
+                          admission check.
+                        maxLength: 253
+                        type: string
                       provider:
                         enum:
                         - Local
+                        - MultiKueue
                         type: string
+                      workerClusters:
+                        description: WorkerClusters snapshots all eligible MultiKueueCluster
+                          names.
+                        items:
+                          type: string
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-type: set
                     required:
                     - provider
                     type: object
@@ -2367,6 +2389,12 @@ spec:
                       name:
                         enum:
                         - default-scheduler
+                        - volcano
+                        type: string
+                      queueName:
+                        description: QueueName selects a Volcano Queue; it is separate
+                          from the Kueue LocalQueue.
+                        maxLength: 253
                         type: string
                     required:
                     - name
@@ -2490,6 +2518,8 @@ spec:
               nodes:
                 additionalProperties:
                   properties:
+                    admission:
+                      type: string
                     attempt:
                       format: int32
                       type: integer
@@ -2500,13 +2530,31 @@ spec:
                       type: integer
                     executionIntentRecorded:
                       type: boolean
+                    failureClass:
+                      type: string
+                    observationSource:
+                      type: string
                     phase:
+                      type: string
+                    placement:
+                      type: string
+                    podGroupUID:
                       type: string
                     podName:
                       type: string
                     podUID:
                       type: string
                     reason:
+                      type: string
+                    workerCluster:
+                      type: string
+                    workerPodUID:
+                      type: string
+                    workerWorkloadUID:
+                      type: string
+                    workloadName:
+                      type: string
+                    workloadUID:
                       type: string
                   required:
                   - attempt
