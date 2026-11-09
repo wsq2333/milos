@@ -6,7 +6,7 @@ English | [Chinese (Simplified)](README.zh-CN.md)
 
 Milos aims to improve scheduling and resource allocation for training and inference workflows: match stages to suitable resources, reduce queueing and idle capacity, and improve workflow completion time and resource efficiency.
 
-The current implementation executes finite Pod DAGs from native `WorkflowRun` resources, with dependency tracking, bounded parallelism, cancellation, deadlines and restart recovery. Native Pods with `default-scheduler` are the default; Kueue, MultiKueue and Volcano integrations are optional and experimental. ML allocation policies, distributed training workloads and online inference support remain future work.
+The current implementation executes finite Pod DAGs from native `WorkflowRun` resources, with dependency tracking, bounded parallelism, cancellation, workflow/node deadlines, node runtime limits, waiting diagnostics and restart recovery. Native Pods with `default-scheduler` are the default; Kueue, MultiKueue and Volcano integrations are optional and experimental. ML allocation policies, distributed training workloads and online inference support remain future work.
 
 > Prototype: unit and isolated API tests pass. Small CPU DAGs and cancellation have been validated with Kueue and Volcano in a shared cluster. GPU, MultiKueue and production-scale acceptance remain pending.
 
@@ -60,10 +60,11 @@ The implementation uses Go 1.26+, controller-runtime and client-go. External sch
 - [x] **Implement experimental scheduling adapters:** Kueue, Volcano and MultiKueue/default, including identity checks and cancellation cleanup. MultiKueue has isolated API coverage, but no real multi-cluster acceptance yet.
 - [x] **Validate local execution in a real cluster:** small CPU diamond DAGs passed for native/default, native/Volcano, Kueue/default and Kueue/Volcano; dependency order, bounded concurrency, admission and PodGroup identity were checked. Running cancellation and cleanup passed for Kueue/Volcano. An independent Argo baseline also passed; this does not validate an Argo importer.
 - [ ] **Broaden live acceptance:** workflow deadlines, controller restart/failover, MultiKueue dispatch/cancellation and worker outages, GPU workloads and production-scale behavior.
-- [ ] **Complete the workflow lifecycle:** user-configurable timeout policies, queue/scheduling/startup stall diagnosis, bounded application retries, result retention and automatic collection; add a focused Argo Workflow YAML importer.
+- [x] **Add node timeout controls:** total and main-container runtime budgets, per-node overrides and visible waiting reasons. Covered by unit and isolated API tests; live acceptance remains pending.
+- [ ] **Complete the workflow lifecycle:** separate queue/scheduling/startup limits, bounded application retries, result retention and automatic collection; add a focused Argo Workflow YAML importer.
 - [ ] **Expand workload types:** explore RayJob and TrainJob backends, typed workload configuration and execution groups for distributed training.
 - [ ] **Optimize ML resource allocation:** establish training and batch-inference benchmarks, then evaluate heterogeneous resource matching, workflow concurrency and GPU utilization. Design online inference separately.
 
 ## Documentation
 
-[Development](docs/development.md) · [Architecture](docs/design.md) · [Execution abstraction](docs/execution-abstraction.md) · [Scheduling integrations](docs/scheduling-integrations.md) · [Deployment](deploy/README.md)
+[Development](docs/development.md) · [Architecture](docs/design.md) · [Execution abstraction](docs/execution-abstraction.md) · [Scheduling integrations](docs/scheduling-integrations.md) · [Timeouts](docs/timeouts.md) · [Deployment](deploy/README.md)

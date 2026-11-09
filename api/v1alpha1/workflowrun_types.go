@@ -57,6 +57,9 @@ type WorkflowDefinition struct {
 }
 
 type NodeSpec struct {
+	// Timeouts overrides workflow node defaults field by field. Zero disables a limit.
+	// +optional
+	Timeouts *NodeTimeouts `json:"timeouts,omitempty"`
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=63
 	Name string `json:"name"`
@@ -132,6 +135,9 @@ type SchedulerConfig struct {
 }
 
 type ExecutionPolicy struct {
+	// NodeTimeouts supplies defaults for each node; omitted limits are disabled.
+	// +optional
+	NodeTimeouts *NodeTimeouts `json:"nodeTimeouts,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=128
 	// +kubebuilder:default=1
@@ -147,6 +153,20 @@ type ExecutionPolicy struct {
 	WorkflowTimeoutSeconds int64 `json:"workflowTimeoutSeconds"`
 }
 
+// NodeTimeouts contains elapsed wall-clock budgets, not CPU usage limits.
+type NodeTimeouts struct {
+	// TotalSeconds starts when execution intent is persisted, before resource creation.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=604800
+	TotalSeconds *int64 `json:"totalSeconds,omitempty"`
+	// RunSeconds starts at the main container's reported startedAt timestamp.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=604800
+	RunSeconds *int64 `json:"runSeconds,omitempty"`
+}
+
 type WorkflowRunStatus struct {
 	ObservedGeneration int64                 `json:"observedGeneration,omitempty"`
 	DefinitionDigest   string                `json:"definitionDigest,omitempty"`
@@ -159,22 +179,36 @@ type WorkflowRunStatus struct {
 }
 
 type NodeStatus struct {
-	WorkloadName            string `json:"workloadName,omitempty"`
-	WorkloadUID             string `json:"workloadUID,omitempty"`
-	PodGroupUID             string `json:"podGroupUID,omitempty"`
-	WorkerCluster           string `json:"workerCluster,omitempty"`
-	WorkerPodUID            string `json:"workerPodUID,omitempty"`
-	WorkerWorkloadUID       string `json:"workerWorkloadUID,omitempty"`
-	Admission               string `json:"admission,omitempty"`
-	Placement               string `json:"placement,omitempty"`
-	ObservationSource       string `json:"observationSource,omitempty"`
-	FailureClass            string `json:"failureClass,omitempty"`
-	Phase                   string `json:"phase"`
-	Attempt                 int32  `json:"attempt"`
-	DispatchGeneration      int32  `json:"dispatchGeneration"`
-	ExecutionIntentRecorded bool   `json:"executionIntentRecorded,omitempty"`
-	PodName                 string `json:"podName,omitempty"`
-	PodUID                  string `json:"podUID,omitempty"`
-	Reason                  string `json:"reason,omitempty"`
-	CleanupComplete         bool   `json:"cleanupComplete,omitempty"`
+	// IntentRecordedAt is committed before any backend creation and never reset.
+	IntentRecordedAt *metav1.Time `json:"intentRecordedAt,omitempty"`
+	// StartedAt comes from the identity-verified main container, including remote execution.
+	StartedAt  *metav1.Time `json:"startedAt,omitempty"`
+	FinishedAt *metav1.Time `json:"finishedAt,omitempty"`
+	// Stage describes execution progress independently of the planner phase.
+	Stage string `json:"stage,omitempty"`
+	// StageSince is the first persisted local observation of the current stage.
+	StageSince *metav1.Time `json:"stageSince,omitempty"`
+	// Message contains bounded diagnostic context, not logs.
+	// +kubebuilder:validation:MaxLength=1024
+	Message                 string       `json:"message,omitempty"`
+	StopReason              string       `json:"stopReason,omitempty"`
+	StopRequestedAt         *metav1.Time `json:"stopRequestedAt,omitempty"`
+	WorkloadName            string       `json:"workloadName,omitempty"`
+	WorkloadUID             string       `json:"workloadUID,omitempty"`
+	PodGroupUID             string       `json:"podGroupUID,omitempty"`
+	WorkerCluster           string       `json:"workerCluster,omitempty"`
+	WorkerPodUID            string       `json:"workerPodUID,omitempty"`
+	WorkerWorkloadUID       string       `json:"workerWorkloadUID,omitempty"`
+	Admission               string       `json:"admission,omitempty"`
+	Placement               string       `json:"placement,omitempty"`
+	ObservationSource       string       `json:"observationSource,omitempty"`
+	FailureClass            string       `json:"failureClass,omitempty"`
+	Phase                   string       `json:"phase"`
+	Attempt                 int32        `json:"attempt"`
+	DispatchGeneration      int32        `json:"dispatchGeneration"`
+	ExecutionIntentRecorded bool         `json:"executionIntentRecorded,omitempty"`
+	PodName                 string       `json:"podName,omitempty"`
+	PodUID                  string       `json:"podUID,omitempty"`
+	Reason                  string       `json:"reason,omitempty"`
+	CleanupComplete         bool         `json:"cleanupComplete,omitempty"`
 }

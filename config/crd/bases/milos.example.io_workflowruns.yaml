@@ -396,6 +396,25 @@ spec:
                           maxLength: 63
                           pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                           type: string
+                        timeouts:
+                          description: Timeouts overrides workflow node defaults field
+                            by field. Zero disables a limit.
+                          properties:
+                            runSeconds:
+                              description: RunSeconds starts at the main container's
+                                reported startedAt timestamp.
+                              format: int64
+                              maximum: 604800
+                              minimum: 0
+                              type: integer
+                            totalSeconds:
+                              description: TotalSeconds starts when execution intent
+                                is persisted, before resource creation.
+                              format: int64
+                              maximum: 604800
+                              minimum: 0
+                              type: integer
+                          type: object
                       required:
                       - container
                       - name
@@ -2419,6 +2438,25 @@ spec:
                     - 0
                     format: int32
                     type: integer
+                  nodeTimeouts:
+                    description: NodeTimeouts supplies defaults for each node; omitted
+                      limits are disabled.
+                    properties:
+                      runSeconds:
+                        description: RunSeconds starts at the main container's reported
+                          startedAt timestamp.
+                        format: int64
+                        maximum: 604800
+                        minimum: 0
+                        type: integer
+                      totalSeconds:
+                        description: TotalSeconds starts when execution intent is
+                          persisted, before resource creation.
+                        format: int64
+                        maximum: 604800
+                        minimum: 0
+                        type: integer
+                    type: object
                   parallelism:
                     default: 1
                     format: int32
@@ -2532,6 +2570,19 @@ spec:
                       type: boolean
                     failureClass:
                       type: string
+                    finishedAt:
+                      format: date-time
+                      type: string
+                    intentRecordedAt:
+                      description: IntentRecordedAt is committed before any backend
+                        creation and never reset.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message contains bounded diagnostic context, not
+                        logs.
+                      maxLength: 1024
+                      type: string
                     observationSource:
                       type: string
                     phase:
@@ -2545,6 +2596,25 @@ spec:
                     podUID:
                       type: string
                     reason:
+                      type: string
+                    stage:
+                      description: Stage describes execution progress independently
+                        of the planner phase.
+                      type: string
+                    stageSince:
+                      description: StageSince is the first persisted local observation
+                        of the current stage.
+                      format: date-time
+                      type: string
+                    startedAt:
+                      description: StartedAt comes from the identity-verified main
+                        container, including remote execution.
+                      format: date-time
+                      type: string
+                    stopReason:
+                      type: string
+                    stopRequestedAt:
+                      format: date-time
                       type: string
                     workerCluster:
                       type: string

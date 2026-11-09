@@ -31,6 +31,8 @@ func (b *Backend) verifyRemote(p *corev1.Pod, r execution.Request, h execution.H
 }
 func (b *Backend) observeRemote(ctx context.Context, r execution.Request, o execution.Observation, managerWL *unstructured.Unstructured) (execution.Observation, error) {
 	o.Phase, o.Placement, o.Source, o.Reason = "Unknown", "Dispatching", "WorkerPod", "WaitingForWorker"
+	// Manager projections are not runtime timing evidence for remote execution.
+	o.Available, o.StartedAt, o.FinishedAt, o.Message = false, nil, nil, ""
 	if err := b.validatePolicy(ctx, r); err != nil {
 		return o, err
 	}

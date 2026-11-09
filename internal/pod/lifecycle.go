@@ -61,7 +61,11 @@ func (b *Lifecycle) Observe(ctx context.Context, r execution.Request, h executio
 		if h.PodUID != "" {
 			reason = "ResourceMissing"
 		}
-		return execution.Observation{Handle: h, Phase: "Unknown", Reason: reason}, nil
+		stage := "ObservationUnavailable"
+		if reason == "NotCreated" {
+			stage = "Creating"
+		}
+		return execution.Observation{Handle: h, Phase: "Unknown", Reason: reason, Stage: stage}, nil
 	}
 	if err != nil {
 		return execution.Observation{}, err
@@ -72,12 +76,54 @@ func (b *Lifecycle) Observe(ctx context.Context, r execution.Request, h executio
 }
 
 func ObservePod(p *corev1.Pod) execution.Observation {
-	o := execution.Observation{Available: true, Reason: p.Status.Reason, Admission: "NotRequired", Placement: "Local", Source: "LocalPod"}
+	o := execution.Observation{Available: true, Reason: p.Status.Reason, Message: p.Status.Message, Admission: "NotRequired", Placement: "Local", Source: "LocalPod"}
+	for _, c := range p.Status.ContainerStatuses {
+		if c.Name != "main" {
+			continue
+		}
+		if c.State.Running != nil && !c.State.Running.StartedAt.IsZero() {
+			t := c.State.Running.StartedAt.Time
+			o.StartedAt = &t
+		}
+		if c.State.Terminated != nil {
+			if !c.State.Terminated.StartedAt.IsZero() {
+				t := c.State.Terminated.StartedAt.Time
+				o.StartedAt = &t
+			}
+			if !c.State.Terminated.FinishedAt.IsZero() {
+				t := c.State.Terminated.FinishedAt.Time
+				o.FinishedAt = &t
+			}
+		}
+		if c.State.Waiting != nil {
+			o.Reason, o.Message = c.State.Waiting.Reason, c.State.Waiting.Message
+		}
+	}
+	o.Stage = "WaitingForStartup"
+	if o.StartedAt != nil {
+		o.Stage = "Running"
+	}
+	if p.Spec.NodeName == "" && o.StartedAt == nil {
+		o.Stage = "WaitingForScheduling"
+		for _, c := range p.Status.Conditions {
+			if c.Type == corev1.PodScheduled && c.Status != corev1.ConditionTrue {
+				o.Reason, o.Message = c.Reason, c.Message
+			}
+		}
+		if len(p.Spec.SchedulingGates) > 0 {
+			o.Stage = "WaitingForAdmission"
+			if o.Reason == "" {
+				o.Reason = "SchedulingGated"
+			}
+		}
+	}
 	switch p.Status.Phase {
 	case corev1.PodSucceeded:
 		o.Phase = "Succeeded"
+		o.Stage = "Finished"
 	case corev1.PodFailed:
 		o.Phase = "Failed"
+		o.Stage = "Finished"
 		o.FailureClass = "Infrastructure"
 		for _, c := range p.Status.ContainerStatuses {
 			if c.Name == "main" && c.State.Terminated != nil && c.State.Terminated.ExitCode != 0 && p.Status.Reason != "Evicted" {
@@ -90,6 +136,7 @@ func ObservePod(p *corev1.Pod) execution.Observation {
 		o.Phase = "Submitted"
 	default:
 		o.Phase = "Unknown"
+		o.Stage = "ObservationUnavailable"
 	}
 	return o
 }

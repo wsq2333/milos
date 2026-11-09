@@ -136,4 +136,6 @@ func TestAPIContract(t *testing.T) {
 	if err := c.Status().Patch(ctx, stale, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); !apierrors.IsConflict(err) {
 		t.Fatalf("stale status patch was accepted: %v", err)
 	}
+	t.Run("node timeouts", func(t *testing.T) { testNodeTimeoutAPI(t, c, namespace.Name) })
+
 }

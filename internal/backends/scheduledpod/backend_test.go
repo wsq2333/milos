@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/wsq2333/milos/internal/execution"
 	executionpod "github.com/wsq2333/milos/internal/pod"
@@ -148,7 +149,7 @@ func TestKueueAdmissionEvictionAndNoRecreation(t *testing.T) {
 	p, h := createManagerPod(t, b, r)
 	w := createWorkload(t, b, r, p)
 	o, err := b.Observe(ctx, r, h)
-	if err != nil || o.Admission != "Waiting" || o.Reason != "WaitingForAdmission" {
+	if err != nil || o.Admission != "Waiting" || o.Reason != "WaitingForAdmission" || o.Stage != "WaitingForAdmission" {
 		t.Fatalf("waiting: %+v %v", o, err)
 	}
 	h = o.Handle
@@ -162,7 +163,7 @@ func TestKueueAdmissionEvictionAndNoRecreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	o, err = b.Observe(ctx, r, h)
-	if err != nil || o.Phase != "Unknown" || o.FailureClass != "AdmissionEvicted" {
+	if err != nil || o.Phase != "Unknown" || o.FailureClass != "AdmissionEvicted" || o.Stage != "ObservationUnavailable" {
 		t.Fatalf("eviction: %+v %v", o, err)
 	}
 	if _, err := b.Ensure(ctx, r, h); !errors.Is(err, execution.ErrResourceMissing) {
@@ -423,5 +424,33 @@ func TestRemoteCollectUsesPersistedWorkerResultDespiteManagerLag(t *testing.T) {
 	u, err := b.Collect(ctx, r, h, ack)
 	if err != nil || u.Complete {
 		t.Fatalf("collection must start cleanup despite stale manager phase and wait for worker absence: %+v %v", u, err)
+	}
+}
+
+func TestRemoteTimingUsesWorkerAndWaitingStage(t *testing.T) {
+	b, r := fixture(t)
+	worker := enableRemote(t, b, &r)
+	ctx := context.Background()
+	p, h := createManagerPod(t, b, r)
+	w := createWorkload(t, b, r, p)
+	managerStart := metav1.NewTime(time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC))
+	p.Status.Phase = corev1.PodSucceeded
+	p.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "main", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{StartedAt: managerStart, FinishedAt: managerStart}}}}
+	if err := b.Client.Status().Update(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	o, err := b.Observe(ctx, r, h)
+	if err != nil || o.Stage != "WaitingForWorker" || o.StartedAt != nil || o.FinishedAt != nil || o.Available {
+		t.Fatalf("dispatch wait: %+v %v", o, err)
+	}
+	remotePod := createRemote(t, worker, r, p, w)
+	started := metav1.NewTime(time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC))
+	remotePod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "main", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: started}}}}
+	if err := worker.Status().Update(ctx, remotePod); err != nil {
+		t.Fatal(err)
+	}
+	o, err = b.Observe(ctx, r, h)
+	if err != nil || o.Source != "WorkerPod" || o.Stage != "Running" || o.StartedAt == nil || !o.StartedAt.Equal(started.Time) {
+		t.Fatalf("worker runtime not propagated: %+v %v", o, err)
 	}
 }
