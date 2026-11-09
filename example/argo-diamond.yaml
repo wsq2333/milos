@@ -1,0 +1,45 @@
+# Argo reference input. Milos does not import Argo Workflow YAML yet.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: milos-argo-diamond-
+  namespace: argo-sim-dev
+spec:
+  serviceAccountName: argo-workflow
+  entrypoint: main
+  parallelism: 2
+  activeDeadlineSeconds: 300
+  templates:
+    - name: main
+      dag:
+        failFast: false
+        tasks:
+          - name: prepare
+            template: step
+            arguments:
+              parameters: [{name: stage, value: prepare}]
+          - name: left
+            dependencies: [prepare]
+            template: step
+            arguments:
+              parameters: [{name: stage, value: left}]
+          - name: right
+            dependencies: [prepare]
+            template: step
+            arguments:
+              parameters: [{name: stage, value: right}]
+          - name: finish
+            dependencies: [left, right]
+            template: step
+            arguments:
+              parameters: [{name: stage, value: finish}]
+    - name: step
+      inputs:
+        parameters: [{name: stage}]
+      container:
+        image: registry-cn-wulanchabu-vpc.ack.aliyuncs.com/acs/busybox:1.33
+        command: [sh, -c]
+        args: ['echo "START {{inputs.parameters.stage}} $(date -u +%FT%TZ)"; sleep 5; echo "DONE {{inputs.parameters.stage}} $(date -u +%FT%TZ)"']
+        resources:
+          requests: {cpu: 10m, memory: 32Mi}
+          limits: {cpu: 100m, memory: 64Mi}

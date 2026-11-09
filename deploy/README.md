@@ -1,6 +1,6 @@
 # Deploy Milos
 
-This directory contains reviewable deployment configuration. **Deployment and live validation are pending explicit user instruction.** Rendering manifests and running isolated code tests do not install anything in a shared cluster.
+This directory contains reviewable deployment configuration. **Shared-cluster deployments require explicit user authorization.** See the [sim prod deployment configuration](sim-prod/README.md) for the dedicated smoke-test setup. Rendering manifests and running isolated code tests do not install anything in a shared cluster.
 
 The default deployment reconciles WorkflowRuns in the `milos` namespace and uses the native Pod backend. Experimental overlays enable Kueue, Volcano or MultiKueue. They do not install or reconfigure those upstream components, provision GPUs, create queues, or replicate worker storage.
 
@@ -125,7 +125,7 @@ Replace the last file with the selected overlay. For MultiKueue, prepare the Sec
 
 On 2026-11-06, all five overlays and the CRD bundle rendered successfully on the designated Linux development machine. Rendered namespaces, RBAC subject references, integration flags and separate CRD installation were checked. Go 1.26.5 race tests, build and vet passed. Isolated Kubernetes 1.36 API tests passed with Kueue v0.20.4 and Volcano v1.14.6 CRD schemas, including manager/worker resource identity and cleanup. The opt-in live test compiled but was not run.
 
-No container image build/push, controller deployment, shared-cluster mutation, or real scheduler acceptance test has been completed for these manifests. Deployment validation remains paused until explicitly requested.
+A dedicated sim prod installation subsequently passed CPU smoke tests with the examples in `example/`. The generic overlays above were rendered offline; MultiKueue and GPU deployment acceptance remain pending.
 
 ## Acceptance checklist — pending live execution
 
@@ -138,7 +138,7 @@ After authorization, validate the selected mode in an isolated namespace with ex
 5. For MultiKueue, confirm the manager Pod remains gated, the selected worker's real Pod supplies the result, and worker identities are persisted. Verify cancellation removes remote resources through upstream MultiKueue before Milos reports completion.
 6. Run restart and worker-unavailability cases only in an explicitly approved isolated environment. Unknown or unavailable observations must not create a replacement execution or release a successor.
 
-The opt-in live Go test is described in [scheduling integrations](../docs/scheduling-integrations.md). It creates cluster-scoped test queues and a ResourceFlavor in addition to namespaced resources, so it requires separate approval in shared clusters. Do not run it as part of an ordinary deployment/render check. No shared-cluster live test or deployment has been performed for these manifests.
+The opt-in live Go test is described in [scheduling integrations](../docs/scheduling-integrations.md). It creates cluster-scoped test queues and a ResourceFlavor in addition to namespaced resources, so it requires separate approval in shared clusters. Do not run it as part of an ordinary deployment/render check. The dedicated sim prod CPU smoke tests do not certify every overlay or deployment environment.
 
 ## Upgrade, rollback and cleanup
 

@@ -8,7 +8,7 @@ Milos aims to improve scheduling and resource allocation for training and infere
 
 The current implementation executes finite Pod DAGs from native `WorkflowRun` resources, with dependency tracking, bounded parallelism, cancellation, deadlines and restart recovery. Native Pods with `default-scheduler` are the default; Kueue, MultiKueue and Volcano integrations are optional and experimental. ML allocation policies, distributed training workloads and online inference support remain future work.
 
-> Prototype: unit and isolated API tests pass. Real scheduler acceptance and deployment validation are pending; this is not a production release.
+> Prototype: unit and isolated API tests pass. Small CPU DAGs and cancellation have been validated with Kueue and Volcano in a shared cluster. GPU, MultiKueue and production-scale acceptance remain pending.
 
 ## Core architecture
 

@@ -1,0 +1,97 @@
+apiVersion: milos.example.io/v1alpha1
+kind: WorkflowRun
+metadata:
+  generateName: milos-smoke-kueue-
+  namespace: argo-sim-dev
+  labels:
+    milos.example.io/test: diamond
+spec:
+  desiredState: Running
+  execution:
+    backend: kueue-pod
+    contractVersion: v1
+    admission:
+      provider: Kueue
+      queueRef: sim-acs-argo-dev
+    placement:
+      provider: Local
+    scheduler:
+      name: default-scheduler
+  executionPolicy:
+    parallelism: 2
+    maxRetries: 0
+    workflowTimeoutSeconds: 300
+  definition:
+    nodes:
+    - name: prepare
+      dependencies: []
+      container:
+        image: registry-cn-wulanchabu-vpc.ack.aliyuncs.com/acs/busybox:1.33
+        command:
+        - sh
+        - -c
+        args:
+        - echo "START prepare $(date -u +%FT%TZ)"; sleep 5; echo "DONE prepare $(date
+          -u +%FT%TZ)"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+    - name: left
+      dependencies:
+      - prepare
+      container:
+        image: registry-cn-wulanchabu-vpc.ack.aliyuncs.com/acs/busybox:1.33
+        command:
+        - sh
+        - -c
+        args:
+        - echo "START left $(date -u +%FT%TZ)"; sleep 5; echo "DONE left $(date -u
+          +%FT%TZ)"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+    - name: right
+      dependencies:
+      - prepare
+      container:
+        image: registry-cn-wulanchabu-vpc.ack.aliyuncs.com/acs/busybox:1.33
+        command:
+        - sh
+        - -c
+        args:
+        - echo "START right $(date -u +%FT%TZ)"; sleep 5; echo "DONE right $(date
+          -u +%FT%TZ)"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+    - name: finish
+      dependencies:
+      - left
+      - right
+      container:
+        image: registry-cn-wulanchabu-vpc.ack.aliyuncs.com/acs/busybox:1.33
+        command:
+        - sh
+        - -c
+        args:
+        - echo "START finish $(date -u +%FT%TZ)"; sleep 5; echo "DONE finish $(date
+          -u +%FT%TZ)"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi

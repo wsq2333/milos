@@ -17,3 +17,6 @@
 .env
 .env.*
 !.env.example
+
+# Local validation reports, resource inventories and operational notes
+/.local/

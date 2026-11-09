@@ -87,7 +87,7 @@ go test -tags=live -v -count=1 -timeout=15m ./tests/live
 
 It requires the Milos CRD and a functioning Kueue Pod integration. It creates a unique namespace, a ResourceFlavor, two ClusterQueues restricted to that namespace, LocalQueues and tiny CPU-only runs. It does not edit existing resources or join shared cohorts. It deletes only its own test runs and queues, using UID preconditions; the empty namespace is retained. Cluster-scoped test resource creation requires explicit authorization in a shared environment. Prefer the user-designated SSH development environment for tests, with explicit kubeconfig/context and an isolated source directory.
 
-A real Volcano scheduling run, real MultiKueue dispatch/cancellation, worker outages, and least-privilege RBAC deployment remain release acceptance work. Do not equate fake-client or envtest coverage with live scheduler compatibility.
+Small CPU DAGs passed on a real sim prod deployment on 2026-11-09 for native/default, native/Volcano, Kueue/default and Kueue/Volcano, including combined-path cancellation and scoped Pod creation permissions. Reusable smoke-test manifests and the verification script are in [example/](../example/README.md). Real MultiKueue dispatch/cancellation, worker outages, GPU behavior and production-scale acceptance remain unverified.
 
 ## Upstream references
 
