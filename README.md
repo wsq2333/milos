@@ -56,10 +56,13 @@ The implementation uses Go 1.26+, controller-runtime and client-go. External sch
 
 ## Roadmap
 
-- **Validate scheduling integrations:** real Kueue/Volcano execution, MultiKueue dispatch and cancellation, restart recovery and worker outages.
-- **Complete the workflow lifecycle:** bounded application retries, result retention and automatic collection; add a focused Argo Workflow YAML importer.
-- **Expand workload types:** explore RayJob and TrainJob backends, typed workload configuration and execution groups for distributed training.
-- **Optimize ML resource allocation:** establish training and batch-inference benchmarks, then evaluate heterogeneous resource matching, workflow concurrency and GPU utilization. Design online inference separately.
+- [x] **Implement the workflow core:** native Pod DAGs, durable execution identities, dependency and parallelism control, cancellation, workflow-wide deadlines and restart recovery. Covered by unit and isolated API tests; live deadline and controller-failover acceptance remain pending.
+- [x] **Implement experimental scheduling adapters:** Kueue, Volcano and MultiKueue/default, including identity checks and cancellation cleanup. MultiKueue has isolated API coverage, but no real multi-cluster acceptance yet.
+- [x] **Validate local execution in a real cluster:** small CPU diamond DAGs passed for native/default, native/Volcano, Kueue/default and Kueue/Volcano; dependency order, bounded concurrency, admission and PodGroup identity were checked. Running cancellation and cleanup passed for Kueue/Volcano. An independent Argo baseline also passed; this does not validate an Argo importer.
+- [ ] **Broaden live acceptance:** workflow deadlines, controller restart/failover, MultiKueue dispatch/cancellation and worker outages, GPU workloads and production-scale behavior.
+- [ ] **Complete the workflow lifecycle:** user-configurable timeout policies, queue/scheduling/startup stall diagnosis, bounded application retries, result retention and automatic collection; add a focused Argo Workflow YAML importer.
+- [ ] **Expand workload types:** explore RayJob and TrainJob backends, typed workload configuration and execution groups for distributed training.
+- [ ] **Optimize ML resource allocation:** establish training and batch-inference benchmarks, then evaluate heterogeneous resource matching, workflow concurrency and GPU utilization. Design online inference separately.
 
 ## Documentation
 
