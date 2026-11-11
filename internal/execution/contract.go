@@ -62,6 +62,10 @@ type Handle struct {
 }
 
 type Observation struct {
+	Stage        string
+	Message      string
+	StartedAt    *time.Time
+	FinishedAt   *time.Time
 	Admission    string
 	Placement    string
 	Source       string

@@ -92,7 +92,18 @@ func (b *Backend) Ensure(ctx context.Context, r execution.Request, h execution.H
 	return b.lifecycle().Ensure(ctx, r, h, p)
 }
 
-func (b *Backend) Observe(ctx context.Context, r execution.Request, h execution.Handle) (execution.Observation, error) {
+func (b *Backend) Observe(ctx context.Context, r execution.Request, h execution.Handle) (result execution.Observation, resultErr error) {
+	defer func() {
+		if result.Phase == "Unknown" {
+			result.Stage = "ObservationUnavailable"
+			if result.Reason == "WaitingForWorker" {
+				result.Stage = "WaitingForWorker"
+			}
+			if result.Reason == "NotCreated" {
+				result.Stage = "Creating"
+			}
+		}
+	}()
 	p, err := b.lifecycle().Get(ctx, r, h)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return execution.Observation{}, err
@@ -153,6 +164,7 @@ func (b *Backend) Observe(ctx context.Context, r execution.Request, h execution.
 	}
 	if p != nil && o.Phase == "Submitted" && o.Admission == "Waiting" {
 		o.Reason = "WaitingForAdmission"
+		o.Stage = "WaitingForAdmission"
 	}
 	return o, nil
 }

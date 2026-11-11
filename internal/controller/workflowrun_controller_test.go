@@ -8,6 +8,7 @@ import (
 
 	milosv1 "github.com/wsq2333/milos/api/v1alpha1"
 	"github.com/wsq2333/milos/internal/backends/nativepod"
+	"github.com/wsq2333/milos/internal/execution"
 	"github.com/wsq2333/milos/internal/workflow"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,10 +22,12 @@ import (
 )
 
 type harness struct {
-	t   *testing.T
-	ctx context.Context
-	c   client.Client
-	key client.ObjectKey
+	t       *testing.T
+	ctx     context.Context
+	c       client.Client
+	key     client.ObjectKey
+	now     time.Time
+	backend execution.Backend
 }
 
 func newHarness(t *testing.T) *harness {
@@ -55,16 +58,23 @@ func newHarness(t *testing.T) *harness {
 			return c.Create(ctx, obj, opts...)
 		},
 	}).Build()
-	return &harness{t: t, ctx: context.Background(), c: c, key: client.ObjectKeyFromObject(run)}
+	return &harness{t: t, ctx: context.Background(), c: c, key: client.ObjectKeyFromObject(run), now: time.Now().UTC().Truncate(time.Second)}
 }
 
 func (h *harness) step() {
 	h.t.Helper()
 	// Reconstruct the controller and backend on every iteration to exercise recovery.
-	r := &WorkflowRunReconciler{Client: h.c, Reader: h.c, Backend: &nativepod.Backend{Client: h.c, Reader: h.c}}
+	r := h.reconciler()
 	if _, err := r.Reconcile(h.ctx, ctrl.Request{NamespacedName: h.key}); err != nil {
 		h.t.Fatal(err)
 	}
+}
+func (h *harness) reconciler() *WorkflowRunReconciler {
+	b := h.backend
+	if b == nil {
+		b = &nativepod.Backend{Client: h.c, Reader: h.c}
+	}
+	return &WorkflowRunReconciler{Client: h.c, Reader: h.c, Backend: b, Now: func() time.Time { return h.now }}
 }
 func (h *harness) run() *milosv1.WorkflowRun {
 	h.t.Helper()

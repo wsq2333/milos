@@ -41,6 +41,9 @@ func prepare(run *milosv1.WorkflowRun) ([]workflow.Node, string, error) {
 	if s.ExecutionPolicy.Parallelism < 1 || s.ExecutionPolicy.Parallelism > 128 || s.ExecutionPolicy.MaxRetries != 0 || s.ExecutionPolicy.WorkflowTimeoutSeconds < 0 || s.ExecutionPolicy.WorkflowTimeoutSeconds > 604800 {
 		return nil, "", fmt.Errorf("invalid execution policy; parallelism must be 1..128, retries 0, and timeout 0..604800")
 	}
+	if err := validateTimeouts(s.ExecutionPolicy.NodeTimeouts); err != nil {
+		return nil, "", err
+	}
 	if len(s.Definition.Volumes) > 32 {
 		return nil, "", fmt.Errorf("at most 32 volumes are supported")
 	}
@@ -67,6 +70,9 @@ func prepare(run *milosv1.WorkflowRun) ([]workflow.Node, string, error) {
 	}
 	nodes := make([]workflow.Node, 0, len(s.Definition.Nodes))
 	for _, n := range s.Definition.Nodes {
+		if err := validateTimeouts(n.Timeouts); err != nil {
+			return nil, "", fmt.Errorf("node %q: %w", n.Name, err)
+		}
 		if len(validation.IsDNS1123Label(n.Name)) != 0 {
 			return nil, "", fmt.Errorf("invalid node name %q", n.Name)
 		}

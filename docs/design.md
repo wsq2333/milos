@@ -215,6 +215,8 @@ Preconfigure worker Secrets, ConfigMaps, ServiceAccounts, image-pull permissions
 
 ## 8. Cancellation, timeouts, and cleanup
 
+Node total/runtime budgets, waiting diagnostics and node-scoped timeout cleanup are implemented as described in [timeouts](timeouts.md). Separate stage timeouts and retries remain future work.
+
 Persist cancellation as `desiredState=Cancelled`; it cannot revert to Running. Workflow deletion enters the same cleanup path through a Milos finalizer. Modify only Milos-owned finalizers and do not remove Kueue finalizers.
 
 1. Persist the stop reason and stop scheduling new nodes or application retries. Mark unstarted nodes Cancelled while preserving completed results.
