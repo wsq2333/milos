@@ -35,24 +35,49 @@ flowchart LR
 
 ```text
 milos/
-├── api/v1alpha1/             # WorkflowRun API and generated types
-├── cmd/controller/          # Manager, integration flags and worker clients
+├── api/v1alpha1/             # WorkflowRun / ResourceProfile APIs and generated types
+├── cmd/
+│   ├── controller/          # Controller manager, integration flags and worker clients
+│   └── milos/               # Authoring compiler CLI and profile catalog commands
 ├── internal/
+│   ├── authoring/           # Strict Milos Workflow-to-WorkflowRun compiler
+│   ├── catalog/             # Read-only profile discovery and display
+│   ├── resources/           # Profile validation, resolution and snapshot digests
 │   ├── workflow/            # Pure DAG validation and planner
-│   ├── controller/          # Reconciliation and durable state transitions
-│   ├── execution/           # Lifecycle contract and configuration validation
+│   ├── controller/          # Reconciliation, durable decisions and node timeouts
+│   ├── execution/           # Backend lifecycle contract and configuration validation
 │   ├── backends/
 │   │   ├── router.go        # Select the execution path
 │   │   ├── nativepod/       # Default local Pod backend
 │   │   └── scheduledpod/    # Kueue, MultiKueue and Volcano adapters
-│   └── pod/                 # Shared lifecycle, identity and ownership checks
-├── config/                  # Generated CRD/RBAC and WorkflowRun samples
-├── deploy/                  # Dockerfile, Kustomize overlays and deployment guide
-├── tests/                   # Isolated API tests and opt-in live tests
-└── docs/                    # Design, integration and development details
+│   └── pod/                 # Shared Pod lifecycle, identity and ownership checks
+├── config/
+│   ├── crd/                # Generated CRD schemas and Kustomize entrypoint
+│   ├── rbac/               # Generated roles, service account and base binding
+│   └── samples/            # Native WorkflowRun and timeout examples
+├── deploy/
+│   ├── Dockerfile          # Controller image build
+│   ├── base/               # Namespace and controller deployment
+│   ├── crds/               # CRD installation entrypoint
+│   ├── overlays/           # Native and optional scheduling deployment modes
+│   ├── rbac/               # Optional integration bindings and worker reader role
+│   └── sim-prod/           # Dedicated smoke-test deployment rendering and guide
+├── examples/
+│   ├── diamond.yaml        # Input for the planned standard Argo importer
+│   └── milos/              # Implemented authoring, ResourceProfile and catalog RBAC examples
+├── example/                # Cluster smoke-test DAGs, Argo baseline and verification script
+├── tests/
+│   ├── integration/        # Isolated API-server contract and recovery tests
+│   └── live/               # Opt-in real-cluster scheduling tests
+├── docs/                   # Architecture, authoring, extensions and operational guides
+├── Makefile                # Build, generation, lint and test entrypoints
+├── go.mod / go.sum         # Go module and dependency checksums
+└── AGENTS.md               # Repository contribution instructions
 ```
 
-项目使用 Go 1.26+、controller-runtime 和 client-go。外部调度资源通过 unstructured client 访问，不引入上游控制器实现。可从 [原生 WorkflowRun 示例](config/samples/diamond.yaml) 开始了解输入格式；标准 Argo YAML 导入尚未实现；严格的 Milos 自有编写格式编译器已可用。
+项目使用 Go 1.26+、controller-runtime 和 client-go。外部调度资源通过 unstructured client 访问，不引入上游控制器实现。可从 [原生 WorkflowRun 示例](config/samples/diamond.yaml) 或 [Milos 编写示例](examples/milos/profile-workflow.yaml) 开始了解输入格式。标准 Argo YAML 导入尚未实现；严格的 Milos 自有编写格式编译器已可用。
+
+单元测试以 `*_test.go` 放在对应包中；`tests/` 存放 API 与真实集群集成测试。`make build` 生成被 Git 忽略的 `bin/milos` 和 `bin/milos-controller`。目前两个示例目录用途不同：`examples/` 存放编写格式与 profile 输入，[example/](example/README.md) 存放集群冒烟测试负载及验证工具。
 
 ## 资源感知编写格式
 
@@ -68,6 +93,17 @@ kubectl --context YOUR_CONTEXT create --validate=strict -f /tmp/workflowrun.yaml
 参见 [编写示例](examples/milos/profile-workflow.yaml)、[ResourceProfile 示例](examples/milos/resourceprofile.yaml) 和 [使用方式与支持边界](docs/profile-authoring.md)。平台 profile 提供精确节点标签约束、调度容忍及资源数量边界。控制器在创建 Pod 前持久化解析结果和执行决策；重启或 profile 删除不会改变已接受的执行。省略需求时保留原有路径。
 
 首版仅支持本地 native Pod/default-scheduler。标准 Argo 导入、参数、任务分类/优先级/耗时扩展、分布式执行及 profile 感知的 Kueue/Volcano 集成仍不支持，并会被拒绝。[完整扩展设计](docs/milos-extensions.md) 保留为路线图。单元与隔离 API 测试不代表真实 GPU 放置或性能已验证。
+
+### ResourceProfile 目录
+
+选择任务的 `profileRef` 前，可列出已发布的 profile 并查看用途：
+
+```sh
+bin/milos profiles list --namespace YOUR_NAMESPACE --context YOUR_CONTEXT
+bin/milos profiles describe h20-exclusive-v1 --namespace YOUR_NAMESPACE --context YOUR_CONTEXT
+```
+
+目录展示描述、实际执行的资源数量边界，以及管理员声明的兼容性要求。兼容性文字属于使用指导，不会自动验证；profile 已发布不代表当前有可用容量。未填写目录信息的旧 profile 仍可使用。命令使用调用者凭据，需要命名空间内的 `get`/`list` 权限。参见 [目录使用与只读 RBAC](docs/profile-authoring.md#discover-available-profiles)。
 
 ## Roadmap
 

@@ -3,6 +3,13 @@ kind: ResourceProfile
 metadata:
   name: h20-exclusive-v1
 spec:
+  catalog:
+    description: "Exclusive H20 placement for GPU workloads; operator verification required."
+    workloadTypes: [training, evaluation]
+    compatibilityRequirements:
+      - "Use a CUDA-enabled image validated against the deployed NVIDIA driver."
+      - "The application must fit within the selected GPU memory capacity."
+      - "This profile supports one Pod; multi-node execution is not supported."
   nodeSelector:
     accelerator.platform.example/model: h20
     accelerator.platform.example/allocation-mode: exclusive

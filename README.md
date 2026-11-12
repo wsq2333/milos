@@ -35,24 +35,49 @@ Supported combinations are native/default, native/Volcano, Kueue/default, Kueue/
 
 ```text
 milos/
-├── api/v1alpha1/             # WorkflowRun API and generated types
-├── cmd/controller/          # Manager, integration flags and worker clients
+├── api/v1alpha1/             # WorkflowRun / ResourceProfile APIs and generated types
+├── cmd/
+│   ├── controller/          # Controller manager, integration flags and worker clients
+│   └── milos/               # Authoring compiler CLI and profile catalog commands
 ├── internal/
+│   ├── authoring/           # Strict Milos Workflow-to-WorkflowRun compiler
+│   ├── catalog/             # Read-only profile discovery and display
+│   ├── resources/           # Profile validation, resolution and snapshot digests
 │   ├── workflow/            # Pure DAG validation and planner
-│   ├── controller/          # Reconciliation and durable state transitions
-│   ├── execution/           # Lifecycle contract and configuration validation
+│   ├── controller/          # Reconciliation, durable decisions and node timeouts
+│   ├── execution/           # Backend lifecycle contract and configuration validation
 │   ├── backends/
 │   │   ├── router.go        # Select the execution path
 │   │   ├── nativepod/       # Default local Pod backend
 │   │   └── scheduledpod/    # Kueue, MultiKueue and Volcano adapters
-│   └── pod/                 # Shared lifecycle, identity and ownership checks
-├── config/                  # Generated CRD/RBAC and WorkflowRun samples
-├── deploy/                  # Dockerfile, Kustomize overlays and deployment guide
-├── tests/                   # Isolated API tests and opt-in live tests
-└── docs/                    # Design, integration and development details
+│   └── pod/                 # Shared Pod lifecycle, identity and ownership checks
+├── config/
+│   ├── crd/                # Generated CRD schemas and Kustomize entrypoint
+│   ├── rbac/               # Generated roles, service account and base binding
+│   └── samples/            # Native WorkflowRun and timeout examples
+├── deploy/
+│   ├── Dockerfile          # Controller image build
+│   ├── base/               # Namespace and controller deployment
+│   ├── crds/               # CRD installation entrypoint
+│   ├── overlays/           # Native and optional scheduling deployment modes
+│   ├── rbac/               # Optional integration bindings and worker reader role
+│   └── sim-prod/           # Dedicated smoke-test deployment rendering and guide
+├── examples/
+│   ├── diamond.yaml        # Input for the planned standard Argo importer
+│   └── milos/              # Implemented authoring, ResourceProfile and catalog RBAC examples
+├── example/                # Cluster smoke-test DAGs, Argo baseline and verification script
+├── tests/
+│   ├── integration/        # Isolated API-server contract and recovery tests
+│   └── live/               # Opt-in real-cluster scheduling tests
+├── docs/                   # Architecture, authoring, extensions and operational guides
+├── Makefile                # Build, generation, lint and test entrypoints
+├── go.mod / go.sum         # Go module and dependency checksums
+└── AGENTS.md               # Repository contribution instructions
 ```
 
-The implementation uses Go 1.26+, controller-runtime and client-go. External scheduling resources use unstructured clients, without importing upstream controller implementations. Start with the [native WorkflowRun example](config/samples/diamond.yaml); Standard Argo YAML import is not implemented yet; the strict Milos-owned authoring compiler is available.
+The implementation uses Go 1.26+, controller-runtime and client-go. External scheduling resources use unstructured clients, without importing upstream controller implementations. Start with the [native WorkflowRun example](config/samples/diamond.yaml) or the [Milos authoring example](examples/milos/profile-workflow.yaml). Standard Argo YAML import is not implemented yet; the strict Milos-owned authoring compiler is available.
+
+Unit tests live beside their packages as `*_test.go`; `tests/` contains API and live integration tests. `make build` produces the ignored `bin/milos` and `bin/milos-controller` binaries. The two example directories currently serve different purposes: `examples/` contains authoring/profile inputs, while [example/](example/README.md) contains cluster smoke-test workloads and verification tooling.
 
 ## Resource-aware authoring
 
@@ -68,6 +93,17 @@ kubectl --context YOUR_CONTEXT create --validate=strict -f /tmp/workflowrun.yaml
 See the [authoring example](examples/milos/profile-workflow.yaml), [ResourceProfile example](examples/milos/resourceprofile.yaml), and [usage and supported contract](docs/profile-authoring.md). Platform profiles enforce exact node selectors, scheduling tolerations and resource bounds. The controller persists resolution and execution decisions before Pod creation; restarts and profile deletion do not change an accepted execution. Omitted requirements preserve the legacy path.
 
 This first slice supports local native Pods/default-scheduler only. Standard Argo import, parameters, task type/priority/duration extensions, distributed execution, and profile-aware Kueue/Volcano integration remain unsupported and are rejected. The broader [extension design](docs/milos-extensions.md) remains the roadmap. Unit and isolated API coverage do not establish real GPU placement or performance.
+
+### ResourceProfile catalog
+
+List published profiles and inspect their intended use before choosing a task's `profileRef`:
+
+```sh
+bin/milos profiles list --namespace YOUR_NAMESPACE --context YOUR_CONTEXT
+bin/milos profiles describe h20-exclusive-v1 --namespace YOUR_NAMESPACE --context YOUR_CONTEXT
+```
+
+The catalog shows descriptions, enforced resource bounds and operator-authored compatibility requirements. Compatibility text is guidance, not automatically verified; a published profile does not guarantee available capacity. Older profiles without catalog metadata remain usable. Commands use your credentials and require namespace-scoped `get`/`list` access. See [catalog usage and read-only RBAC](docs/profile-authoring.md#discover-available-profiles).
 
 ## Roadmap
 

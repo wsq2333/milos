@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 
 	v1 "github.com/wsq2333/milos/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -22,6 +23,22 @@ func Digest(v any) string {
 }
 
 func ValidateProfile(s v1.ResourceProfileSpec) error {
+	if c := s.Catalog; c != nil {
+		if utf8.RuneCountInString(c.Description) > 2048 || len(c.WorkloadTypes) > 16 || len(c.CompatibilityRequirements) > 16 {
+			return fmt.Errorf("catalog metadata exceeds limits")
+		}
+		for _, v := range c.WorkloadTypes {
+			if utf8.RuneCountInString(v) > 128 {
+				return fmt.Errorf("catalog workload type exceeds 128 characters")
+			}
+		}
+		for _, v := range c.CompatibilityRequirements {
+			if utf8.RuneCountInString(v) > 512 {
+				return fmt.Errorf("catalog compatibility requirement exceeds 512 characters")
+			}
+		}
+	}
+
 	if len(s.NodeSelector) == 0 || len(s.NodeSelector) > 32 || len(s.Tolerations) > 16 || len(s.ResourceBounds) > 32 {
 		return fmt.Errorf("profile constraint count out of bounds")
 	}

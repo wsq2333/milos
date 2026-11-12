@@ -2671,9 +2671,29 @@ spec:
                     compilerVersion:
                       type: string
                     constraints:
-                      description: ResourceProfileSpec contains enforceable constraints,
-                        not inventory or quota claims.
+                      description: ResourceProfileSpec combines enforced constraints
+                        with optional catalog guidance.
                       properties:
+                        catalog:
+                          description: Catalog contains operator-authored guidance,
+                            not additional scheduling constraints.
+                          properties:
+                            compatibilityRequirements:
+                              items:
+                                maxLength: 512
+                                type: string
+                              maxItems: 16
+                              type: array
+                            description:
+                              maxLength: 2048
+                              type: string
+                            workloadTypes:
+                              items:
+                                maxLength: 128
+                                type: string
+                              maxItems: 16
+                              type: array
+                          type: object
                         nodeSelector:
                           additionalProperties:
                             type: string
