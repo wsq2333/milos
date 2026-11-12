@@ -1,5 +1,7 @@
 # Optional scheduling integrations
 
+See [planned Milos workflow extensions](milos-extensions.md) for the proposed authoring format, ResourceProfile, task requirements and durable execution decisions. A narrower [native profile path](profile-authoring.md) is implemented; the remaining extensions and profile-aware scheduler integrations are future work.
+
 Milos keeps DAG decisions separate from admission, cluster placement, and node scheduling. All modes implement the same `Ensure`, `Observe`, `Stop`, and `Collect` contract. The planner still consumes normalized node phases; it does not manipulate Kueue Workloads or Volcano PodGroups.
 
 These integrations are experimental. The baseline needs only Kubernetes. Optional integrations must be enabled explicitly and their controllers, webhooks and APIs must already be installed by the cluster operator.

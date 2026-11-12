@@ -1,0 +1,12 @@
+apiVersion: milos.example.io/v1alpha1
+kind: ResourceProfile
+metadata:
+  name: h20-exclusive-v1
+spec:
+  nodeSelector:
+    accelerator.platform.example/model: h20
+    accelerator.platform.example/allocation-mode: exclusive
+  resourceBounds:
+    nvidia.com/gpu:
+      min: "1"
+      max: "8"

@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	milosv1 "github.com/wsq2333/milos/api/v1alpha1"
 	"github.com/wsq2333/milos/internal/execution"
+	"github.com/wsq2333/milos/internal/resources"
 	"github.com/wsq2333/milos/internal/workflow"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -76,7 +78,32 @@ func prepare(run *milosv1.WorkflowRun) ([]workflow.Node, string, error) {
 		if len(validation.IsDNS1123Label(n.Name)) != 0 {
 			return nil, "", fmt.Errorf("invalid node name %q", n.Name)
 		}
+		if n.Requirements != nil {
+			name := n.Requirements.ProfileRef.Name
+			if name == "" || len(validation.IsDNS1123Subdomain(name)) != 0 {
+				return nil, "", fmt.Errorf("node %q: invalid requirements.profileRef.name", n.Name)
+			}
+			if s.Execution.Backend != "native-pod" || s.Execution.Scheduler.Name != "default-scheduler" {
+				return nil, "", fmt.Errorf("profiles currently require native-pod/default-scheduler")
+			}
+		}
 		c := n.Container
+		if n.Requirements != nil {
+			rr := resources.Normalize(c.Resources)
+			for name, q := range rr.Requests {
+				if len(validation.IsQualifiedName(string(name))) != 0 {
+					return nil, "", fmt.Errorf("invalid resource name %q", name)
+				}
+				if strings.Contains(string(name), "/") {
+					lim, ok := rr.Limits[name]
+					_, integer := q.AsInt64()
+					if !ok || !integer || q.Cmp(lim) != 0 {
+						return nil, "", fmt.Errorf("extended resource %q requires equal integer requests and limits", name)
+					}
+				}
+			}
+		}
+
 		if c.Image == "" {
 			return nil, "", fmt.Errorf("node %q requires an image", n.Name)
 		}
@@ -128,7 +155,7 @@ func prepare(run *milosv1.WorkflowRun) ([]workflow.Node, string, error) {
 func request(run *milosv1.WorkflowRun, node milosv1.NodeSpec, status milosv1.NodeStatus) execution.Request {
 	c := node.Container
 	automount := false
-	return execution.Request{
+	req := execution.Request{
 		Configuration: configuration(run.Spec.Execution),
 		Key:           execution.Key{WorkflowUID: run.UID, NodeID: node.Name, Attempt: status.Attempt, DispatchGeneration: status.DispatchGeneration},
 		Namespace:     run.Namespace, WorkflowName: run.Name, OwnerAPIVersion: milosv1.GroupVersion.String(), Digest: run.Status.DefinitionDigest,
@@ -139,6 +166,16 @@ func request(run *milosv1.WorkflowRun, node milosv1.NodeSpec, status milosv1.Nod
 			Containers: []corev1.Container{{Name: "main", Image: c.Image, Command: c.Command, Args: c.Args, Env: c.Env, Resources: c.Resources, VolumeMounts: c.VolumeMounts, WorkingDir: c.WorkingDir, ImagePullPolicy: c.ImagePullPolicy}},
 		},
 	}
+	if snap, ok := run.Status.ResolvedTasks[node.Name]; ok && node.Requirements != nil {
+		req.PodSpec.NodeSelector = snap.Constraints.DeepCopy().NodeSelector
+		req.PodSpec.Tolerations = snap.Constraints.DeepCopy().Tolerations
+		req.PodSpec.Containers[0].Resources = *snap.Resources.DeepCopy()
+		if status.Decision != nil {
+			req.Digest = status.Decision.ExecutionDigest
+		}
+	}
+	return req
+
 }
 
 func configuration(c milosv1.ExecutionConfig) execution.Configuration {
@@ -153,3 +190,14 @@ func applyHandle(s *milosv1.NodeStatus, h execution.Handle) {
 	s.PodGroupUID = string(h.PodGroupUID)
 	s.WorkerCluster, s.WorkerPodUID, s.WorkerWorkloadUID = h.WorkerCluster, string(h.WorkerPodUID), string(h.WorkerWorkloadUID)
 }
+
+func executionDigest(run *milosv1.WorkflowRun, node milosv1.NodeSpec, status milosv1.NodeStatus) string {
+	return resources.Digest(struct {
+		Definition string
+		Resolved   string
+		Key        execution.Key
+	}{run.Status.DefinitionDigest, run.Status.ResolvedTasks[node.Name].Digest, execution.Key{WorkflowUID: run.UID, NodeID: node.Name, Attempt: status.Attempt, DispatchGeneration: status.DispatchGeneration}})
+}
+
+// ValidateDefinition applies the same execution validation used by reconciliation.
+func ValidateDefinition(run *milosv1.WorkflowRun) error { _, _, err := prepare(run); return err }

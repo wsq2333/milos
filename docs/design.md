@@ -1,5 +1,7 @@
 # Milos architecture and execution protocol
 
+See [planned Milos workflow extensions](milos-extensions.md) for the proposed authoring format, ResourceProfile, task requirements and durable execution decisions. A narrower [native profile path](profile-authoring.md) is implemented; the remaining extensions and profile-aware scheduler integrations are future work.
+
 Status: target design with a native Pod core and experimental optional scheduling adapters. See [development status](development.md) and [scheduling integrations](scheduling-integrations.md) for the implemented contract and validation boundaries. Interfaces and examples below also include planned capabilities.
 
 Milos targets machine learning training and inference on heterogeneous CPU/GPU Kubernetes clusters, with the long-term goal of improving workflow scheduling and resource allocation. This document defines the initial execution core supporting that goal. API fields, scale limits, and failure-handling details still require prototype validation.

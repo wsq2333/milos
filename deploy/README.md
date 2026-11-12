@@ -9,7 +9,7 @@ The default deployment reconciles WorkflowRuns in the `milos` namespace and uses
 ```text
 deploy/
 ├── Dockerfile              # Controller image build, from the repository root
-├── crds/                   # Separate WorkflowRun CRD installation
+├── crds/                   # Separate WorkflowRun and ResourceProfile CRD installation
 ├── base/                   # Namespace, Deployment and generated controller RBAC
 ├── rbac/                   # Optional manager permissions and worker reader Role
 └── overlays/

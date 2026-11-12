@@ -52,7 +52,22 @@ milos/
 └── docs/                    # Design, integration and development details
 ```
 
-The implementation uses Go 1.26+, controller-runtime and client-go. External scheduling resources use unstructured clients, without importing upstream controller implementations. Start with the [native WorkflowRun example](config/samples/diamond.yaml); Argo YAML import is not implemented yet.
+The implementation uses Go 1.26+, controller-runtime and client-go. External scheduling resources use unstructured clients, without importing upstream controller implementations. Start with the [native WorkflowRun example](config/samples/diamond.yaml); Standard Argo YAML import is not implemented yet; the strict Milos-owned authoring compiler is available.
+
+## Resource-aware authoring
+
+The first native-Pod profile path is implemented. Write a Milos-owned Argo-style Workflow with optional task `milos.requirements.profileRef`, compile it locally, and explicitly create the resulting WorkflowRun:
+
+```sh
+make build
+bin/milos --file examples/milos/profile-workflow.yaml --namespace YOUR_NAMESPACE > /tmp/workflowrun.yaml
+# After an administrator installs the CRDs/controller and a verified profile:
+kubectl --context YOUR_CONTEXT create --validate=strict -f /tmp/workflowrun.yaml
+```
+
+See the [authoring example](examples/milos/profile-workflow.yaml), [ResourceProfile example](examples/milos/resourceprofile.yaml), and [usage and supported contract](docs/profile-authoring.md). Platform profiles enforce exact node selectors, scheduling tolerations and resource bounds. The controller persists resolution and execution decisions before Pod creation; restarts and profile deletion do not change an accepted execution. Omitted requirements preserve the legacy path.
+
+This first slice supports local native Pods/default-scheduler only. Standard Argo import, parameters, task type/priority/duration extensions, distributed execution, and profile-aware Kueue/Volcano integration remain unsupported and are rejected. The broader [extension design](docs/milos-extensions.md) remains the roadmap. Unit and isolated API coverage do not establish real GPU placement or performance.
 
 ## Roadmap
 

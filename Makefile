@@ -4,6 +4,7 @@ NAMESPACE ?= default
 .PHONY: build test vet fmt generate manifests run
 build:
 	go build -o bin/milos-controller ./cmd/controller
+	go build -o bin/milos ./cmd/milos
 
 test:
 	go test -race ./...

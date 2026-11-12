@@ -2,6 +2,10 @@
 
 Status: design draft for `argo-pod-dag-v1`; no parser has been implemented. This document defines the Milos import format. **It does not claim full compatibility with any Argo version.**
 
+## Relationship to the planned Milos authoring format
+
+This contract applies only to standard `argoproj.io/v1alpha1` input. The separately proposed [Milos-owned Workflow format](milos-extensions.md) uses `milos.example.io/v1alpha1` and isolates custom fields under task/workflow `milos` blocks. Both compile into WorkflowRun, but only a narrower Milos-owned compiler is implemented; see [its supported contract](profile-authoring.md). The standard Argo parser remains planned. Do not widen this standard-Argo allowlist to accept Milos extensions implicitly. The Milos format inherits the initial DAG/container restrictions and explicitly adds its supported extension schema; unknown or future fields are rejected.
+
 ## Document and entrypoint
 
 Input must be a single YAML document with `apiVersion: argoproj.io/v1alpha1` and `kind: Workflow`. All templates must be defined in `spec.templates` in that document. One template is the entrypoint DAG; all other invoked templates contain a single container. WorkflowTemplate, templateRef, nested DAGs, and Kubernetes Lists are not supported initially.

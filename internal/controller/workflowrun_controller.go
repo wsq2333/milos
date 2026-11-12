@@ -9,6 +9,7 @@ import (
 	milosv1 "github.com/wsq2333/milos/api/v1alpha1"
 	"github.com/wsq2333/milos/internal/execution"
 	executionpod "github.com/wsq2333/milos/internal/pod"
+	"github.com/wsq2333/milos/internal/resources"
 	"github.com/wsq2333/milos/internal/workflow"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -30,6 +31,7 @@ type WorkflowRunReconciler struct {
 	Now func() time.Time
 }
 
+// +kubebuilder:rbac:groups=milos.example.io,resources=resourceprofiles,verbs=get
 // +kubebuilder:rbac:groups=milos.example.io,resources=workflowruns,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=milos.example.io,resources=workflowruns/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=milos.example.io,resources=workflowruns/finalizers,verbs=update
@@ -76,6 +78,11 @@ func (r *WorkflowRunReconciler) Reconcile(ctx context.Context, key ctrl.Request)
 	}
 	before := run.DeepCopy()
 	if run.Status.DefinitionDigest == "" {
+		resolved, resolveErr := resources.Resolve(ctx, r.Reader, run)
+		if resolveErr != nil {
+			return r.invalid(ctx, run, resolveErr.Error())
+		}
+		run.Status.ResolvedTasks = resolved
 		run.Status.DefinitionDigest = digest
 		run.Status.ObservedGeneration = run.Generation
 		run.Status.Phase = string(workflow.Running)
@@ -89,6 +96,18 @@ func (r *WorkflowRunReconciler) Reconcile(ctx context.Context, key ctrl.Request)
 		}
 		meta.SetStatusCondition(&run.Status.Conditions, metav1.Condition{Type: "Accepted", Status: metav1.ConditionTrue, Reason: "ValidDefinition", Message: "The Pod execution contract is valid", ObservedGeneration: run.Generation})
 		return r.save(ctx, before, run)
+	}
+	for _, node := range run.Spec.Definition.Nodes {
+		if node.Requirements != nil {
+			snap, ok := run.Status.ResolvedTasks[node.Name]
+			if !ok || !resources.Verify(snap) {
+				return r.invalid(ctx, run, "missing or corrupt resolved task snapshot")
+			}
+			st := run.Status.Nodes[node.Name]
+			if st.ExecutionIntentRecorded && (st.Decision == nil || st.Decision.ExecutionDigest != executionDigest(run, node, st)) {
+				return r.invalid(ctx, run, "missing or corrupt execution decision")
+			}
+		}
 	}
 	// Commit observations before planning successors, including recovery after Create.
 	for _, node := range run.Spec.Definition.Nodes {
@@ -174,6 +193,13 @@ func (r *WorkflowRunReconciler) Reconcile(ctx context.Context, key ctrl.Request)
 	}
 	for _, name := range plan.Ready {
 		s := run.Status.Nodes[name]
+		if snap, ok := run.Status.ResolvedTasks[name]; ok {
+			for _, node := range run.Spec.Definition.Nodes {
+				if node.Name == name {
+					s.Decision = &milosv1.ExecutionDecision{ResolvedTaskDigest: snap.Digest, ExecutionDigest: executionDigest(run, node, s), Reason: "ExplicitProfile"}
+				}
+			}
+		}
 		s.ExecutionIntentRecorded = true
 		s.IntentRecordedAt = timestamp(r.now())
 		setStage(&s, "Creating", r.now())
