@@ -12,5 +12,5 @@ var (
 )
 
 func init() {
-	SchemeBuilder.Register(&WorkflowRun{}, &WorkflowRunList{})
+	SchemeBuilder.Register(&WorkflowRun{}, &WorkflowRunList{}, &ResourceProfile{}, &ResourceProfileList{})
 }

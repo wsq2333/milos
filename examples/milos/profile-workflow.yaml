@@ -1,0 +1,27 @@
+apiVersion: milos.example.io/v1alpha1
+kind: Workflow
+metadata:
+  name: hardware-example
+spec:
+  entrypoint: pipeline
+  templates:
+    - name: pipeline
+      dag:
+        failFast: false
+        tasks:
+          - name: evaluate
+            template: evaluate
+            milos:
+              requirements:
+                profileRef:
+                  name: h20-exclusive-v1
+    - name: evaluate
+      container:
+        image: busybox:1.37.0
+        command: ["sh", "-c", "echo profile-placement-smoke-test"]
+        resources:
+          requests:
+            cpu: "1"
+            memory: 128Mi
+          limits:
+            nvidia.com/gpu: "1"

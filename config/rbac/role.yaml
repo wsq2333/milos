@@ -35,6 +35,12 @@ rules:
 - apiGroups:
   - milos.example.io
   resources:
+  - resourceprofiles
+  verbs:
+  - get
+- apiGroups:
+  - milos.example.io
+  resources:
   - workflowruns
   verbs:
   - get

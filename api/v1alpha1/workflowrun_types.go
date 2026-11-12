@@ -57,6 +57,8 @@ type WorkflowDefinition struct {
 }
 
 type NodeSpec struct {
+	// +optional
+	Requirements *TaskRequirements `json:"requirements,omitempty"`
 	// Timeouts overrides workflow node defaults field by field. Zero disables a limit.
 	// +optional
 	Timeouts *NodeTimeouts `json:"timeouts,omitempty"`
@@ -168,17 +170,21 @@ type NodeTimeouts struct {
 }
 
 type WorkflowRunStatus struct {
-	ObservedGeneration int64                 `json:"observedGeneration,omitempty"`
-	DefinitionDigest   string                `json:"definitionDigest,omitempty"`
-	Phase              string                `json:"phase,omitempty"`
-	StopReason         string                `json:"stopReason,omitempty"`
-	Nodes              map[string]NodeStatus `json:"nodes,omitempty"`
+	// +optional
+	ResolvedTasks      map[string]ResolvedTask `json:"resolvedTasks,omitempty"`
+	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
+	DefinitionDigest   string                  `json:"definitionDigest,omitempty"`
+	Phase              string                  `json:"phase,omitempty"`
+	StopReason         string                  `json:"stopReason,omitempty"`
+	Nodes              map[string]NodeStatus   `json:"nodes,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type NodeStatus struct {
+	// +optional
+	Decision *ExecutionDecision `json:"decision,omitempty"`
 	// IntentRecordedAt is committed before any backend creation and never reset.
 	IntentRecordedAt *metav1.Time `json:"intentRecordedAt,omitempty"`
 	// StartedAt comes from the identity-verified main container, including remote execution.
