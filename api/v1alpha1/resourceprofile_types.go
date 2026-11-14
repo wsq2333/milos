@@ -22,8 +22,12 @@ type ResourceProfileList struct {
 	Items           []ResourceProfile `json:"items"`
 }
 
-// ResourceProfileSpec contains enforceable constraints, not inventory or quota claims.
+// ResourceProfileSpec combines enforced constraints with optional catalog guidance.
 type ResourceProfileSpec struct {
+	// Catalog contains operator-authored guidance, not additional scheduling constraints.
+	// +optional
+	Catalog *ProfileCatalogInfo `json:"catalog,omitempty"`
+
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:MaxProperties=32
 	NodeSelector map[string]string `json:"nodeSelector"`
@@ -64,4 +68,19 @@ type ExecutionDecision struct {
 	ResolvedTaskDigest string `json:"resolvedTaskDigest"`
 	ExecutionDigest    string `json:"executionDigest"`
 	Reason             string `json:"reason"`
+}
+
+// ProfileCatalogInfo describes intended use. Compatibility requirements are advisory;
+// Milos does not inspect container contents or verify these statements at runtime.
+type ProfileCatalogInfo struct {
+	// +kubebuilder:validation:MaxLength=2048
+	Description string `json:"description,omitempty"`
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=128
+	WorkloadTypes []string `json:"workloadTypes,omitempty"`
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=512
+	CompatibilityRequirements []string `json:"compatibilityRequirements,omitempty"`
 }

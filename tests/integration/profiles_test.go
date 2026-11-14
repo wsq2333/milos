@@ -3,8 +3,11 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"github.com/wsq2333/milos/internal/catalog"
 	"os"
+	"strings"
 	"testing"
 
 	v1 "github.com/wsq2333/milos/api/v1alpha1"
@@ -21,8 +24,34 @@ import (
 func testProfileAPI(t *testing.T, c client.Client, ns string) {
 	ctx := context.Background()
 	p := &v1.ResourceProfile{ObjectMeta: metav1.ObjectMeta{Name: "h20-exclusive-v1", Namespace: ns}, Spec: v1.ResourceProfileSpec{NodeSelector: map[string]string{"accelerator.platform.example/model": "h20"}, ResourceBounds: map[corev1.ResourceName]v1.ResourceBound{"nvidia.com/gpu": {Min: "1", Max: "8"}}}}
+	p.Spec.Catalog = &v1.ProfileCatalogInfo{Description: "Verified H20 configuration", CompatibilityRequirements: []string{"Use a validated CUDA image"}}
 	if err := c.Create(ctx, p); err != nil {
 		t.Fatal(err)
+	}
+	items, err := catalog.List(ctx, c, ns)
+	if err != nil || len(items.Items) != 1 {
+		t.Fatalf("catalog list: %v %+v", err, items)
+	}
+	detail, err := catalog.Get(ctx, c, ns, p.Name)
+	if err != nil || detail.Spec.Catalog == nil || detail.Spec.Catalog.Description != p.Spec.Catalog.Description {
+		t.Fatalf("catalog round trip: %v %+v", err, detail)
+	}
+	var text bytes.Buffer
+	if err := catalog.WriteDetail(&text, detail); err != nil || !strings.Contains(text.String(), "validated CUDA") {
+		t.Fatalf("catalog detail: %v %s", err, text.String())
+	}
+	invalid := p.DeepCopy()
+	invalid.Name = "oversized-catalog"
+	invalid.ResourceVersion = ""
+	invalid.UID = ""
+	invalid.Spec.Catalog.Description = strings.Repeat("x", 2049)
+	if err := c.Create(ctx, invalid); !apierrors.IsInvalid(err) {
+		t.Fatalf("oversized catalog accepted: %v", err)
+	}
+	catalogChange := p.DeepCopy()
+	catalogChange.Spec.Catalog.Description = "changed"
+	if err := c.Update(ctx, catalogChange); !apierrors.IsInvalid(err) {
+		t.Fatalf("catalog mutation accepted: %v", err)
 	}
 	changed := p.DeepCopy()
 	changed.Spec.NodeSelector["accelerator.platform.example/model"] = "other"
