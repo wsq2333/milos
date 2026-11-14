@@ -2,6 +2,10 @@
 
 See [planned Milos workflow extensions](milos-extensions.md) for the proposed authoring format, ResourceProfile, task requirements and durable execution decisions. A narrower [native profile path](profile-authoring.md) is implemented; the remaining extensions and profile-aware scheduler integrations are future work.
 
+See [resource pools and hardware-aware placement](resource-pools.md) for the proposed ResourcePool/NodeHardware model, hierarchical membership, physical topology boundaries and H1–H5 delivery roadmap. These resources are not implemented.
+
+The design includes [Kueue TAS and worker-side TAS with MultiKueue](resource-pools.md#kueue-tas-and-multikueue), with Volcano topology as an alternative. The [network model](resource-pools.md#network-resources) separates connectivity, device allocation and performance; locality does not guarantee bandwidth.
+
 Status: target design with a native Pod core and experimental optional scheduling adapters. See [development status](development.md) and [scheduling integrations](scheduling-integrations.md) for the implemented contract and validation boundaries. Interfaces and examples below also include planned capabilities.
 
 Milos targets machine learning training and inference on heterogeneous CPU/GPU Kubernetes clusters, with the long-term goal of improving workflow scheduling and resource allocation. This document defines the initial execution core supporting that goal. API fields, scale limits, and failure-handling details still require prototype validation.
@@ -19,6 +23,7 @@ The default path uses native Pods with default-scheduler in one cluster. Experim
 | One Pod per node attempt | Avoid overlapping Job, Argo, and Milos retry mechanisms |
 | Finalize from Pod status | No output-parameter collection, executor, result bridge, or application callbacks in the first release |
 | Separate DAG progression, admission, and node scheduling | Preserve responsibility boundaries across Milos, Kueue/MultiKueue, and Volcano |
+| Planned hardware inventory and pool layer | ResourcePool groups NodeHardware observations; ResourceProfile constrains use; topology and quotas retain their existing authorities |
 
 PostgreSQL may later provide archival storage and queries; it is not an execution dependency. Do not store logs, metrics, or unbounded history in WorkflowRun. Build a small execution core first, then choose extensions based on ML workloads and measured scale.
 
@@ -35,6 +40,8 @@ PostgreSQL may later provide archival storage and queries; it is not an executio
 | Logs and application files | External logging or storage systems | Applications and supporting components |
 
 WorkflowRun does not mirror the entire Pod. Store only the results, resource identities, timestamps, concise reasons, and cleanup progress needed for progression. Manager and worker Pods have different UIDs and must not be confused. A cross-cluster ownerReference is not a remote cleanup protocol.
+
+The planned hardware layer adds cluster-scoped ResourcePool membership and NodeHardware observations per execution cluster. Platform administrators own pool predicates; discovery and pool controllers own observed status. Pool hierarchy does not imply physical connectivity, quota inheritance or tenant isolation. Keep inventory graphs outside WorkflowRun and persist bounded compiled constraints and evidence references for replay. The [hardware design](resource-pools.md#resolution-enforcement-and-restart-safety) defines the required membership-drift and enforcement contract before this path can ship.
 
 ## 3. Object model
 
@@ -181,6 +188,8 @@ Validate queue names, schedulerName, and allowed resource capabilities against d
 
 Start Volcano validation with individual Pods, without creating Volcano Jobs or enabling another application-retry mechanism. Multi-Pod gangs require a separate design for PodGroup, admission sets, and lifecycle. Upstream examples also distinguish schedulerName, PodGroup, and Queue settings. [Volcano tutorial](https://volcano.sh/docs/gettingstarted/tutorials/)
 
+For the planned TAS path, Kueue computes topology assignments and default-scheduler initially binds within those constraints. Validate explicit execution groups and network-device attachment locally before adding MultiKueue worker-side TAS. Persist requirements separately from observed assignments; scheduler-driven replacement needs an explicit runtime/identity recovery contract. These are planned capabilities, not extensions to the currently supported single-Pod contract.
+
 ### Cross-cluster status path
 
 ```text
@@ -272,6 +281,8 @@ Measure reconciliation duration, ready-to-submit latency, admission wait time, s
 | M3 Local extensions | Kueue + default-scheduler, then single-cluster Volcano | Validate admission and node scheduling independently without changing the DAG planner |
 | M4 Multiple clusters | MultiKueue + default-scheduler, then Volcano combinations | Remote execution, delayed status, disconnection, late results, and confirmed cancellation cleanup |
 | M5 Release | Pinned dependencies and capacity measurements | Reproducible compatibility, permissions, retention, and recovery verification |
+
+The resource-management workstream follows [H1–H5](resource-pools.md#delivery-roadmap-and-acceptance): hardware/network inventory and pools, native enforcement, local scheduler mappings, local TAS execution groups (H4a), MultiKueue worker-side TAS (H4b), then measured optimization. Volcano topology remains an alternative path. These stages do not mark lifecycle or multi-cluster acceptance as complete.
 
 Planner tests cover dependencies, failure propagation, retry budgets, determinism, and non-regressing state. envtest covers schema, status conflicts, ownership, UIDs, and related API behavior. It does not run kubelet or a real scheduler and cannot replace multi-cluster E2E tests.
 

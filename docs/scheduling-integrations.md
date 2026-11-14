@@ -2,6 +2,8 @@
 
 See [planned Milos workflow extensions](milos-extensions.md) for the proposed authoring format, ResourceProfile, task requirements and durable execution decisions. A narrower [native profile path](profile-authoring.md) is implemented; the remaining extensions and profile-aware scheduler integrations are future work.
 
+The proposed [ResourcePool and NodeHardware design](resource-pools.md) adds hierarchical hardware membership and sourced inventory. Pools will constrain eligible hardware; they will not own quota, device allocation or network topology. Pool/profile-aware mappings and topology enforcement are not part of the supported combinations below.
+
 Milos keeps DAG decisions separate from admission, cluster placement, and node scheduling. All modes implement the same `Ensure`, `Observe`, `Stop`, and `Collect` contract. The planner still consumes normalized node phases; it does not manipulate Kueue Workloads or Volcano PodGroups.
 
 These integrations are experimental. The baseline needs only Kubernetes. Optional integrations must be enabled explicitly and their controllers, webhooks and APIs must already be installed by the cluster operator.
@@ -57,6 +59,12 @@ Milos creates only the manager Pod. Upstream MultiKueue creates remote Workloads
 Cancellation first marks the manager Pod terminating, then deletes its Workload. Milos' `remote-cleanup` finalizer retains the manager identity until every configured worker reports that associated Pods and Workloads are absent. Milos then removes only its own finalizer and waits for manager resource disappearance. Worker unavailability leaves cleanup pending. Upstream Kueue finalizers are never stripped. Keep the queue routing and worker configuration available and unchanged until active runs are cleaned up; policy drift deliberately blocks remote cleanup rather than silently accepting a different worker set.
 
 This is cooperative cleanup, not distributed fencing. A fresh absence check cannot prove that an in-flight remote create cannot arrive later, or that a process on a partitioned node has stopped. Upstream cleanup and application-level idempotency remain necessary. Automatic redispatch adoption and cross-cluster exactly-once side effects are not provided. Namespaces, service accounts, images, PVCs and data must already be usable on every eligible worker; Milos does not replicate storage or credentials.
+
+## Planned TAS and network integration
+
+This is future work, not an addition to the supported configuration table. Start with local Kueue TAS and default-scheduler, validate explicit execution groups, then add MultiKueue with topology assignment in each worker cluster. Volcano topology remains a separate local alternative. Upstream support does not establish Milos runtime, identity or cleanup compatibility.
+
+Network locality uses provider topology; RDMA/NIC allocation uses device requests or supported DRA claims and the required attachment components. Link speed and same-rack placement do not guarantee bandwidth. See the [TAS/MultiKueue diagrams and examples](resource-pools.md#kueue-tas-and-multikueue), [network resource model](resource-pools.md#network-resources) and [H3–H4b acceptance plan](resource-pools.md#delivery-roadmap-and-acceptance).
 
 ## Persistence and permissions
 
