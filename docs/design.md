@@ -2,7 +2,7 @@
 
 See [planned Milos workflow extensions](milos-extensions.md) for the proposed authoring format, ResourceProfile, task requirements and durable execution decisions. A narrower [native profile path](profile-authoring.md) is implemented; the remaining extensions and profile-aware scheduler integrations are future work.
 
-See [resource pools and hardware-aware placement](resource-pools.md) for the proposed ResourcePool/NodeHardware model, hierarchical membership, physical topology boundaries and H1–H5 delivery roadmap. These resources are not implemented.
+See [DRA-backed profiles and hardware-aware placement](resource-pools.md) for the planned device allocation path, hierarchical catalog views and H1–H5 roadmap. DRA integration is not implemented; standalone ResourcePool/NodeHardware CRDs are deferred.
 
 The design includes [Kueue TAS and worker-side TAS with MultiKueue](resource-pools.md#kueue-tas-and-multikueue), with Volcano topology as an alternative. The [network model](resource-pools.md#network-resources) separates connectivity, device allocation and performance; locality does not guarantee bandwidth.
 
@@ -23,7 +23,7 @@ The default path uses native Pods with default-scheduler in one cluster. Experim
 | One Pod per node attempt | Avoid overlapping Job, Argo, and Milos retry mechanisms |
 | Finalize from Pod status | No output-parameter collection, executor, result bridge, or application callbacks in the first release |
 | Separate DAG progression, admission, and node scheduling | Preserve responsibility boundaries across Milos, Kueue/MultiKueue, and Volcano |
-| Planned hardware inventory and pool layer | ResourcePool groups NodeHardware observations; ResourceProfile constrains use; topology and quotas retain their existing authorities |
+| Planned DRA-backed profiles | ResourceProfile references approved device templates; DRA owns inventory/allocation; pool hierarchy is a read-only view |
 
 PostgreSQL may later provide archival storage and queries; it is not an execution dependency. Do not store logs, metrics, or unbounded history in WorkflowRun. Build a small execution core first, then choose extensions based on ML workloads and measured scale.
 
@@ -41,7 +41,7 @@ PostgreSQL may later provide archival storage and queries; it is not an executio
 
 WorkflowRun does not mirror the entire Pod. Store only the results, resource identities, timestamps, concise reasons, and cleanup progress needed for progression. Manager and worker Pods have different UIDs and must not be confused. A cross-cluster ownerReference is not a remote cleanup protocol.
 
-The planned hardware layer adds cluster-scoped ResourcePool membership and NodeHardware observations per execution cluster. Platform administrators own pool predicates; discovery and pool controllers own observed status. Pool hierarchy does not imply physical connectivity, quota inheritance or tenant isolation. Keep inventory graphs outside WorkflowRun and persist bounded compiled constraints and evidence references for replay. The [hardware design](resource-pools.md#resolution-enforcement-and-restart-safety) defines the required membership-drift and enforcement contract before this path can ship.
+The planned hardware catalog reads Nodes, driver-owned ResourceSlices and trusted supplemental facts. DeviceClass/ResourceClaimTemplate policy stays platform-owned; Kubernetes owns claim creation and allocation. ResourceProfiles remain the user-facing contract. Hierarchical views do not allocate devices or create quotas. Persist bounded claim request content and policy references in WorkflowRun, then record allocation separately. The [DRA lifecycle contract](resource-pools.md#resolution-enforcement-and-restart-safety) covers policy immutability, claim identity, restart and cleanup.
 
 ## 3. Object model
 
@@ -188,7 +188,7 @@ Validate queue names, schedulerName, and allowed resource capabilities against d
 
 Start Volcano validation with individual Pods, without creating Volcano Jobs or enabling another application-retry mechanism. Multi-Pod gangs require a separate design for PodGroup, admission sets, and lifecycle. Upstream examples also distinguish schedulerName, PodGroup, and Queue settings. [Volcano tutorial](https://volcano.sh/docs/gettingstarted/tutorials/)
 
-For the planned TAS path, Kueue computes topology assignments and default-scheduler initially binds within those constraints. Validate explicit execution groups and network-device attachment locally before adding MultiKueue worker-side TAS. Persist requirements separately from observed assignments; scheduler-driven replacement needs an explicit runtime/identity recovery contract. These are planned capabilities, not extensions to the currently supported single-Pod contract.
+For the planned TAS path, Kueue computes topology assignments and default-scheduler initially binds within those constraints. Validate DRA claim lifecycle, explicit execution groups and network-device attachment locally before adding MultiKueue worker-side TAS/DRA. Worker DeviceClasses and claim templates must be provisioned and verified separately. Persist requirements separately from observed assignments; scheduler-driven replacement needs an explicit runtime/identity recovery contract. These are planned capabilities, not extensions to the currently supported single-Pod contract.
 
 ### Cross-cluster status path
 
@@ -282,7 +282,7 @@ Measure reconciliation duration, ready-to-submit latency, admission wait time, s
 | M4 Multiple clusters | MultiKueue + default-scheduler, then Volcano combinations | Remote execution, delayed status, disconnection, late results, and confirmed cancellation cleanup |
 | M5 Release | Pinned dependencies and capacity measurements | Reproducible compatibility, permissions, retention, and recovery verification |
 
-The resource-management workstream follows [H1–H5](resource-pools.md#delivery-roadmap-and-acceptance): hardware/network inventory and pools, native enforcement, local scheduler mappings, local TAS execution groups (H4a), MultiKueue worker-side TAS (H4b), then measured optimization. Volcano topology remains an alternative path. These stages do not mark lifecycle or multi-cluster acceptance as complete.
+The resource-management workstream follows [H1–H5](resource-pools.md#delivery-roadmap-and-acceptance): read-only Node/ResourceSlice views, DRA-backed native profiles, Kueue DRA/TAS mappings, local execution groups and network claims (H4a), MultiKueue worker-side TAS/DRA (H4b), then measured optimization. Volcano topology remains an alternative path. These stages do not mark lifecycle or multi-cluster acceptance as complete.
 
 Planner tests cover dependencies, failure propagation, retry budgets, determinism, and non-regressing state. envtest covers schema, status conflicts, ownership, UIDs, and related API behavior. It does not run kubelet or a real scheduler and cannot replace multi-cluster E2E tests.
 

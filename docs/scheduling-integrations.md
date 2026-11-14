@@ -2,7 +2,7 @@
 
 See [planned Milos workflow extensions](milos-extensions.md) for the proposed authoring format, ResourceProfile, task requirements and durable execution decisions. A narrower [native profile path](profile-authoring.md) is implemented; the remaining extensions and profile-aware scheduler integrations are future work.
 
-The proposed [ResourcePool and NodeHardware design](resource-pools.md) adds hierarchical hardware membership and sourced inventory. Pools will constrain eligible hardware; they will not own quota, device allocation or network topology. Pool/profile-aware mappings and topology enforcement are not part of the supported combinations below.
+The proposed [DRA-backed profile design](resource-pools.md) reuses driver inventory/allocation and adds read-only hierarchical hardware views. Standalone ResourcePool/NodeHardware CRDs are deferred. DRA profile and topology mappings are not part of the supported combinations below.
 
 Milos keeps DAG decisions separate from admission, cluster placement, and node scheduling. All modes implement the same `Ensure`, `Observe`, `Stop`, and `Collect` contract. The planner still consumes normalized node phases; it does not manipulate Kueue Workloads or Volcano PodGroups.
 
@@ -62,9 +62,11 @@ This is cooperative cleanup, not distributed fencing. A fresh absence check cann
 
 ## Planned TAS and network integration
 
-This is future work, not an addition to the supported configuration table. Start with local Kueue TAS and default-scheduler, validate explicit execution groups, then add MultiKueue with topology assignment in each worker cluster. Volcano topology remains a separate local alternative. Upstream support does not establish Milos runtime, identity or cleanup compatibility.
+This is future work, not an addition to the supported configuration table. First validate DRA-backed native profiles and claim lifecycle. Then add Kueue DRA quota/TAS feasibility with default-scheduler, local execution groups and MultiKueue worker-side TAS/DRA. Volcano topology remains an alternative requiring its own allocation compatibility tests. Upstream support does not establish Milos runtime, identity or cleanup compatibility.
 
-Network locality uses provider topology; RDMA/NIC allocation uses device requests or supported DRA claims and the required attachment components. Link speed and same-rack placement do not guarantee bandwidth. See the [TAS/MultiKueue diagrams and examples](resource-pools.md#kueue-tas-and-multikueue), [network resource model](resource-pools.md#network-resources) and [H3–H4b acceptance plan](resource-pools.md#delivery-roadmap-and-acceptance).
+Network locality uses provider topology; RDMA/NIC allocation uses approved DRA template requests and required attachment components. Existing device-plugin profiles remain an explicit compatibility path, never a silent fallback. Link speed and same-rack placement do not guarantee bandwidth. See the [TAS/MultiKueue diagrams and examples](resource-pools.md#kueue-tas-and-multikueue), [network resource model](resource-pools.md#network-resources) and [H3–H4b acceptance plan](resource-pools.md#delivery-roadmap-and-acceptance).
+
+The initial DRA integration uses per-Pod ResourceClaimTemplates with exact counts. Validate Kueue feature gates and unsupported claim features. On workers, administrators provision compatible DeviceClasses/templates; MultiKueue does not synchronize them. Add authorized claim observations and cleanup verification without writing allocation status or removing driver protection finalizers. See [Kueue DRA limitations](https://kueue.sigs.k8s.io/v0.20/docs/concepts/dynamic_resource_allocation/).
 
 ## Persistence and permissions
 

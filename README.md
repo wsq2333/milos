@@ -10,6 +10,22 @@ The current implementation executes finite Pod DAGs from native `WorkflowRun` re
 
 > Prototype: unit and isolated API tests pass. Small CPU DAGs and cancellation have been validated with Kueue and Volcano in a shared cluster. GPU, MultiKueue and production-scale acceptance remain pending.
 
+## Key features
+
+| Feature | Status | What it provides |
+| --- | --- | --- |
+| Workflow orchestration | Implemented | Finite Pod DAGs with dependency tracking and bounded parallelism |
+| Argo-style authoring | Implemented subset | Strict Milos YAML compiled into WorkflowRun; standard Argo import remains planned |
+| ResourceProfile catalog and constraints | Implemented, native/default | List profiles, inspect guidance and bounds, and enforce Pod selectors, tolerations and resource checks |
+| Restart-safe execution | Implemented | Persist execution decisions and identities before creating resources |
+| Execution controls and diagnostics | Implemented | Cancellation, workflow/node timeouts and visible waiting reasons |
+| Scheduling adapters | Experimental | Kueue admission, Volcano placement and MultiKueue/default remote execution |
+| DRA-backed profiles and hardware views | Planned | Approved device claims, driver-owned inventory and lightweight hierarchical catalogs |
+| Distributed topology and networking | Planned | Execution groups, local TAS then worker-side TAS/DRA, and network-device requirements; Volcano is an alternative |
+| Measured resource optimization | Planned | Hardware recommendations, then constrained selection based on completion time, cost and fairness |
+
+Planned features are design goals, not current capabilities. See the [roadmap](#roadmap) and [DRA/TAS design](docs/resource-pools.md) for delivery and acceptance criteria.
+
 ## Core architecture
 
 ```mermaid
@@ -105,20 +121,22 @@ bin/milos profiles describe h20-exclusive-v1 --namespace YOUR_NAMESPACE --contex
 
 The catalog shows descriptions, enforced resource bounds and operator-authored compatibility requirements. Compatibility text is guidance, not automatically verified; a published profile does not guarantee available capacity. Older profiles without catalog metadata remain usable. Commands use your credentials and require namespace-scoped `get`/`list` access. See [catalog usage and read-only RBAC](docs/profile-authoring.md#discover-available-profiles).
 
-### Planned hardware inventory and pools
+### Planned DRA-backed profiles and hardware views
 
-A shared pool may contain eight-GPU, single-GPU and CPU-only nodes. Training, evaluation and simulation need different subsets:
+ResourceProfile stays the workflow-facing contract. The proposed device path uses Kubernetes DRA, while hierarchical pools become read-only views over existing inventory:
 
 ```mermaid
 flowchart LR
-    T["Task requirements"] --> P["ResourceProfile<br/>Allowed hardware"]
-    P --> R["ResourcePool<br/>Eligible nodes"]
-    R --> N["NodeHardware<br/>CPU, GPU, memory and connectivity"]
+    T["Workflow task"] --> P["ResourceProfile"]
+    P --> C["Approved claim template<br/>and DeviceClass"]
+    C --> D["Kubernetes DRA<br/>Allocate devices"]
+    I["Nodes + ResourceSlices"] --> V["Hardware catalog<br/>Hierarchical views"]
+    V -. "discovery" .-> P
 ```
 
-Pools group hardware; profiles constrain its use; schedulers choose placement. This is a proposed extension, not implemented. Existing workflows stay unchanged. See the [illustrated design and example](docs/resource-pools.md).
+DRA integration is planned, not implemented. Existing device-plugin profiles remain unchanged; standalone ResourcePool/NodeHardware CRDs are deferred. See the [design and examples](docs/resource-pools.md).
 
-The planned topology path is **local Kueue TAS → MultiKueue with worker-side TAS**; Volcano topology is an alternative. The [network model](docs/resource-pools.md#network-resources) separates connectivity, device allocation and performance. Same-rack placement does not guarantee bandwidth. See the [TAS diagrams and examples](docs/resource-pools.md#kueue-tas-and-multikueue).
+The topology path remains **local Kueue TAS → MultiKueue with worker-side TAS/DRA**, with Volcano as a separately validated alternative. The [network model](docs/resource-pools.md#network-resources) separates connectivity, device allocation and performance; locality does not guarantee bandwidth.
 
 ## Roadmap
 
@@ -128,16 +146,16 @@ The planned topology path is **local Kueue TAS → MultiKueue with worker-side T
 - [ ] **Broaden live acceptance:** workflow deadlines, controller restart/failover, MultiKueue dispatch/cancellation and worker outages, GPU workloads and production-scale behavior.
 - [x] **Add node timeout controls:** total and main-container runtime budgets, per-node overrides and visible waiting reasons. Covered by unit and isolated API tests; live acceptance remains pending.
 - [x] **Add native ResourceProfiles and catalog discovery:** strict Milos authoring, durable native/default decisions, enforced selectors/resource bounds and profile list/describe. Hardware observations and real GPU placement remain unverified.
-- [ ] **H1 — Discover hardware and organize pools:** hardware/network observations, hierarchical membership, freshness/conflict reporting and deduplicated capacity by model/node shape.
-- [ ] **H2 — Enforce pool-backed native profiles:** optional pool references, trusted placement constraints, bounded restart-safe decisions, membership-drift checks and unchanged legacy behavior.
-- [ ] **H3 — Integrate pool-aware admission and placement:** profile/flavor mappings, local TAS configuration, authorized priority and waiting diagnostics; Volcano remains an alternative.
+- [ ] **H1 — Reuse device inventory:** read-only Node/ResourceSlice catalog, trusted supplemental facts and hierarchical views; no duplicate device database.
+- [ ] **H2 — Add DRA-backed native profiles:** approved claim templates, immutable policy contracts, claim identity/cleanup and restart safety; preserve existing profiles.
+- [ ] **H3 — Integrate Kueue DRA and TAS:** quota mapping, device-feasibility checks, authorized priority and waiting diagnostics; validate Volcano separately.
 - [ ] **Complete the workflow lifecycle:** separate queue/scheduling/startup limits, bounded application retries, result retention and automatic collection; add a focused Argo Workflow YAML importer.
-- [ ] **H4a — Validate local TAS groups:** explore TrainJob/RayJob execution groups, PodSet grouping, required/preferred locality, network-device allocation and explicit recovery ownership.
-- [ ] **H4b — Add MultiKueue with worker-side TAS:** per-worker pool/flavor bindings, whole-group dispatch, remote topology observations, replacement identity and outage cleanup.
+- [ ] **H4a — Validate local TAS groups:** explore TrainJob/RayJob execution groups, PodSet grouping, locality, network-device claims and explicit recovery ownership.
+- [ ] **H4b — Add MultiKueue with worker-side TAS/DRA:** approved worker classes/templates, whole-group dispatch, claim/assignment observations and outage cleanup.
 - [ ] **H5 — Optimize ML resource allocation:** benchmark training, evaluation, simulation and 3DGS; recommend hardware before constrained automatic selection, and measure completion time, cost, fragmentation and fairness. Design online inference separately.
 
-See the [hardware roadmap and acceptance criteria](docs/resource-pools.md#delivery-roadmap-and-acceptance) for dependencies and business value. The next hardware milestone is H1 followed by a narrow H2 native path; lifecycle and live-acceptance work remain required.
+See the [hardware roadmap and acceptance criteria](docs/resource-pools.md#delivery-roadmap-and-acceptance) for dependencies and business value. The next hardware milestone is H1 followed by a narrow H2 DRA path; lifecycle and live-acceptance work remain required.
 
 ## Documentation
 
-[Development](docs/development.md) · [Architecture](docs/design.md) · [Resource pools and hardware](docs/resource-pools.md) · [Workflow extensions](docs/milos-extensions.md) · [Execution abstraction](docs/execution-abstraction.md) · [Scheduling integrations](docs/scheduling-integrations.md) · [Timeouts](docs/timeouts.md) · [Deployment](deploy/README.md)
+[Development](docs/development.md) · [Architecture](docs/design.md) · [DRA profiles and hardware](docs/resource-pools.md) · [Workflow extensions](docs/milos-extensions.md) · [Execution abstraction](docs/execution-abstraction.md) · [Scheduling integrations](docs/scheduling-integrations.md) · [Timeouts](docs/timeouts.md) · [Deployment](deploy/README.md)

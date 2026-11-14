@@ -128,3 +128,7 @@ Catalog CLI tests cover namespace isolation, stable listing, legacy/empty result
 Unit tests cover strict compilation, missing profiles, bounds, normalization, corrupt snapshots and legacy omission. The isolated API test creates a profile and compiled WorkflowRun, verifies profile immutability, deletes the profile after resolution, reconstructs the reconciler for every step, checks Pod selectors/GPU requests and stable UID, then confirms cancellation. The test does not run a scheduler, kubelet or GPU container; physical hardware placement requires separate live acceptance.
 
 See [planned extensions](milos-extensions.md) for later capabilities and Kueue/Volcano mappings.
+
+## Planned DRA profiles
+
+The [DRA-backed profile design](resource-pools.md) proposes an explicit allocation provider and an approved ResourceClaimTemplate reference. It is not supported by the current compiler or controller. Existing profiles keep their selectors, container resource quantities and native/default behavior; they do not require DRA. Future DRA profiles take device quantities from the approved template and reject duplicate extended-resource requests for those devices.
